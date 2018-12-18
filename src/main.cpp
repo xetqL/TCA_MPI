@@ -178,75 +178,21 @@ inline void apply_rule184(const int msx, const int msy,
         case Rotary: { // von neumann neighborhood
             auto north_cell = ca_matrix.at(y - 1).at(x); auto south_cell = ca_matrix.at(y + 1).at(x);
             auto north_vehicle = vehicles_map.at(y-1).at(x);auto south_vehicle = vehicles_map.at(y+1).at(x);
-
             auto west_cell  = ca_matrix.at(y).at(x - 1);  auto east_cell  = ca_matrix.at(y).at(x + 1);
             auto west_vehicle = vehicles_map.at(y).at(x - 1);auto east_vehicle = vehicles_map.at(y).at(x + 1);
-
-            auto vehicle = vehicles_map.at(y).at(x);
+            //auto vehicle = vehicles_map.at(y).at(x);
 
             if(south_cell.direction == Rotary && east_cell.direction == Rotary) {   // top left
-                in_rotary_rule(vehicle, west_cell, south_cell, west_vehicle, vehicles_new, vehicles_map_new);
-/*
-                if(vehicle->rotary_exit_flag) { // get out, if you can
-                    if(can_move(west_cell, west_vehicle, nullptr)) {
-                        vehicles_new.emplace_back(west_cell, 1);
-                        vehicles_map_new[y][x - 1] = &(*(vehicles_new.end() - 1));
-                    } else {
-                        vehicles_new.emplace_back(south_cell, 1);
-                        vehicles_map_new[y + 1][x] = &(*(vehicles_new.end() - 1));
-                    }
-                } else {
-                    vehicles_new.emplace_back(south_cell, 1);
-                    vehicles_map_new[y + 1][x] = &(*(vehicles_new.end() - 1));
-                }*/
+                in_rotary_rule(&vehicle, west_cell, south_cell, west_vehicle, vehicles_new, vehicles_map_new);
             }
             if(east_cell.direction == Rotary  && north_cell.direction == Rotary){  // bottom left
-                in_rotary_rule(vehicle, south_cell, east_cell, south_vehicle, vehicles_new, vehicles_map_new);
-/*
-                if(vehicle->rotary_exit_flag) { // get out, if you can
-                    if(can_move(south_cell, south_vehicle, nullptr)) {
-                        vehicles_new.emplace_back(south_cell, 1);
-                        vehicles_map_new[y+1][x] = &(*(vehicles_new.end() - 1));
-                    } else {
-                        vehicles_new.emplace_back(east_cell, 1);
-                        vehicles_map_new[y][x+1] = &(*(vehicles_new.end() - 1));
-                    }
-                } else {
-                    vehicles_new.emplace_back(east_cell, 1);
-                    vehicles_map_new[y][x+1] = &(*(vehicles_new.end() - 1));
-                }*/
+                in_rotary_rule(&vehicle, south_cell, east_cell, south_vehicle, vehicles_new, vehicles_map_new);
             }
             if(north_cell.direction == Rotary && west_cell.direction == Rotary) {  // bottom right
-                in_rotary_rule(vehicle, east_cell, north_cell, east_vehicle, vehicles_new, vehicles_map_new);
-                /*if(vehicle->rotary_exit_flag) { // get out, if you can
-
-                    if(can_move(east_cell, east_vehicle, nullptr)) {
-                        vehicles_new.emplace_back(east_cell, 1);
-                        vehicles_map_new[y][x + 1] = &(*(vehicles_new.end() - 1));
-                    } else {
-                        vehicles_new.emplace_back(north_cell, 1);
-                        vehicles_map_new[y - 1][x] = &(*(vehicles_new.end() - 1));
-                    }
-                } else {
-                    vehicles_new.emplace_back(north_cell, 1);
-                    vehicles_map_new[y - 1][x] = &(*(vehicles_new.end() - 1));
-                }*/
+                in_rotary_rule(&vehicle, east_cell, north_cell, east_vehicle, vehicles_new, vehicles_map_new);
             }
             if(west_cell.direction == Rotary  && south_cell.direction == Rotary) { // top right
-                in_rotary_rule(vehicle, north_cell, west_cell, north_vehicle, vehicles_new, vehicles_map_new);
-                /*if(vehicle->rotary_exit_flag) { // get out, if you can
-
-                    if(can_move(north_cell, north_vehicle, nullptr)) {
-                        vehicles_new.emplace_back(north_cell, 1);
-                        vehicles_map_new[y - 1][x] = &(*(vehicles_new.end() - 1));
-                    } else {
-                        vehicles_new.emplace_back(west_cell, 1);
-                        vehicles_map_new[y][x - 1] = &(*(vehicles_new.end() - 1));
-                    }
-                } else {
-                    vehicles_new.emplace_back(west_cell, 1);
-                    vehicles_map_new[y][x - 1] = &(*(vehicles_new.end() - 1));
-                }*/
+                in_rotary_rule(&vehicle, north_cell, west_cell, north_vehicle, vehicles_new, vehicles_map_new);
             }
         }
         break;
