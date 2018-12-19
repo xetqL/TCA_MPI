@@ -6,10 +6,10 @@
 #include <memory>
 #include <map>
 #include <cassert>
+//#include "../include/geometric_load_balancer.hpp"
 
 #define SPATIAL_DISCRETISATION_X = 7.5 //the average length a conventional vehicle occupies in a closely packed jam (and as such, its width is neglected),
 #define TEMPORAL_DISCRETISATION = 1.0 //typical driver’s reaction time
-
 
 enum CA_State {
     Empty, Car, Wall
@@ -72,7 +72,17 @@ inline void nullptrify(vector<vector<Vehicle *> > &vehicles_map) {
     for (auto &r : vehicles_map)
         for (auto &c : r) c = nullptr;
 }
-bool can_move(const CA_Cell &destination_cell, const Vehicle* destination_vehicle, const Vehicle* priority_vehicle) {
+bool can_move(const CA_Cell &destination_cell, const Vehicle* destination_vehicle, Vehicle* priority_vehicle) {
+    	
+    if ( (destination_vehicle == nullptr && destination_cell.direction != Rotary)){
+    	return true;
+    }
+    if (priority_vehicle == nullptr) {
+        return destination_cell.direction == Rotary;
+    }else{
+        return priority_vehicle->rotary_exit_flag && destination_cell.direction == Rotary;
+    } 
+   
     return (destination_vehicle == nullptr && destination_cell.direction != Rotary) ||
            (destination_cell.direction == Rotary && (priority_vehicle == nullptr || priority_vehicle->rotary_exit_flag));
 }
