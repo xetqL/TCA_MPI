@@ -24,6 +24,13 @@
  std::cout << name << " took " << diff << " milliseconds" << std::endl;\
 };\
 
+template<class A>
+inline void nullptrify(std::vector<std::vector<A*> > &matrix2d) {
+    for (auto &r : matrix2d)
+        for (auto &c : r)
+            c = nullptr;
+}
+
 inline std::string get_date_as_string() {
     auto t = std::time(nullptr);
     auto tm = *std::localtime(&t);

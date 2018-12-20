@@ -15,28 +15,7 @@
 #include <zoltan.h>
 
 #define ENABLE_AUTOMATIC_MIGRATION true
-
-/*template<int N>
-void init_mesh_data(int rank, int nprocs, MESH_DATA<N>& mesh_data, sim_param_t* params) {
-
-    if (rank == 0) {
-        double min_r2 = params->sig_lj*params->sig_lj;
-
-        //std::random_device rd; //Will be used to obtain a seed for the random number engine
-        std::mt19937 gen(params->seed); //Standard mersenne_twister_engine seeded with rd()
-        std::uniform_real_distribution<elements::ElementRealType> udist(0.0, params->simsize);
-        //std::normal_distribution<double> ndist(params->simsize/2, 0.5);
-
-        std::vector<elements::Element<N>> elements(params->npart);
-
-        elements::Element<N>::create_random_n(elements, udist, gen, [=](auto point, auto other){
-            return elements::distance2<N>(point, other) >= min_r2;
-        });
-
-        elements::init_particles_random_v(elements, params->T0);
-        mesh_data.els = elements;
-    } else {}
-}*/
+#define DISABLE_AUTOMATIC_MIGRATION FALSE
 
 template<int N>
 int get_number_of_objects(void *data, int *ierr) {
@@ -64,7 +43,12 @@ template<int N>
 int get_num_geometry(void *data, int *ierr) {
     *ierr = ZOLTAN_OK;
     return N;
-} 
+}
+
+template<class A>
+struct MESH_DATA {
+    std::vector<A> els;
+};
 
 template<int N>
 void get_geometry_list(void *data, int sizeGID, int sizeLID,

@@ -7,6 +7,7 @@
 
 #include <vector>
 #include <memory>
+#include <mpi.h>
 
 namespace partitioning {
     struct CommunicationDatatype {
@@ -30,15 +31,7 @@ namespace partitioning {
             MPI_Type_free(&range_datatype);
         }
     };
-    template<typename PartitionsType, typename DataTypeContainer, typename DomainContainer>
-    class Partitioner {
-    public:
-        virtual std::unique_ptr<PartitionsType> partition_data(DataTypeContainer spatial_data,
-                                                               DomainContainer   &domain_boundary,
-                                                               int number_of_partitions) const = 0;
-        virtual CommunicationDatatype register_datatype() const = 0;
 
-    };
 }
 
 #endif //NBMPI_PARTITIONER_HPP
