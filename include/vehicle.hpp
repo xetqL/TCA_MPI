@@ -14,17 +14,18 @@ struct Vehicle {
     int gid = 0;
     int lid = 0;
     int rotary_exit_flag;
-    std::tuple<int, int> position;
+    std::pair<int, int> position;
     float speed;
-    Vehicle(): gid(0), lid(0), rotary_exit_flag(0), position(std::make_tuple(0, 0)),  speed(0) {}
-    Vehicle(int gid, int lid, int x, int y, float speed) : gid(gid), lid(lid), rotary_exit_flag(rand() % 100 < PROBABILITY_EXIT), position(std::make_tuple(x, y)),  speed(speed) {}
-    Vehicle(int gid, int lid, std::tuple<int, int> pos, float speed) : gid(gid), lid(lid), rotary_exit_flag(rand() % 100 < PROBABILITY_EXIT), position(std::move(pos)),  speed(speed) {}
+
+    Vehicle(): gid(0), lid(0), rotary_exit_flag(0), position(std::make_pair(0, 0)),  speed(0) {}
+    Vehicle(int gid, int lid, int x, int y, float speed) : gid(gid), lid(lid), rotary_exit_flag(rand() % 100 < PROBABILITY_EXIT), position(std::make_pair(x, y)),  speed(speed) {}
+    Vehicle(int gid, int lid, std::pair<int, int> pos, float speed) : gid(gid), lid(lid), rotary_exit_flag(rand() % 100 < PROBABILITY_EXIT), position(std::move(pos)),  speed(speed) {}
     Vehicle(int gid, int lid, CA_Cell& c, float speed) : gid(gid), lid(lid), rotary_exit_flag(rand() % 100 < PROBABILITY_EXIT), position(c.position),  speed(speed) {}
     Vehicle(int gid, int lid, const CA_Cell& c, float speed) : gid(gid), lid(lid), rotary_exit_flag(rand() % 100 < PROBABILITY_EXIT), position(c.position),  speed(speed) {}
 
     friend std::ostream &operator<<(std::ostream &os, const Vehicle &vehicle) {
         int x,y;
-        std::tie(x,y) = vehicle.position;
+        std::tie(x, y) = vehicle.position;
         os << "gid: " << vehicle.gid << " lid: " << vehicle.lid << " rotary_exit_flag: " << vehicle.rotary_exit_flag
            << " position: (" << x << ","<< y <<") speed: " << vehicle.speed;
         return os;
