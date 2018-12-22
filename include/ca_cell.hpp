@@ -5,6 +5,7 @@
 #ifndef CA_ROAD_CA_CELL_HPP
 #define CA_ROAD_CA_CELL_HPP
 
+#include <ostream>
 #include "driving_direction.hpp"
 
 struct CA_Cell {
@@ -15,6 +16,10 @@ struct CA_Cell {
     CA_Cell(char c) : direction(char_to_driving(c)) {}
     CA_Cell(std::pair<int,int> position, char c) : position(std::move(position)), direction(char_to_driving(c)) {}
 
+    friend std::ostream &operator<<(std::ostream &os, const CA_Cell &cell) {
+        os << "direction: " << driving_to_char(cell.direction) << " position: [" << cell.position.first << ","<<cell.position.second<<"]";
+        return os;
+    }
 };
 
 #endif //CA_ROAD_CA_CELL_HPP

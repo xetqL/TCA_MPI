@@ -26,4 +26,21 @@ DrivingDirection char_to_driving(char c) {
     }
 }
 
+char driving_to_char(DrivingDirection c) {
+    switch (c) {
+        case GoingLeft:
+            return 'L';
+        case GoingRight:
+            return 'R';
+        case GoingUp:
+            return 'U';
+        case GoingDown:
+            return 'D';
+        case Rotary:
+            return 'O';
+        default :
+            return '-';
+    }
+}
+
 #endif //CA_ROAD_DRIVING_DIRECTION_HPP

@@ -9,7 +9,7 @@
 #include <ostream>
 #include "ca_cell.hpp"
 #include "communication.hpp"
-#define PROBABILITY_EXIT 50
+#define PROBABILITY_EXIT 30
 struct Vehicle {
     int gid = 0;
     int lid = 0;
@@ -22,6 +22,10 @@ struct Vehicle {
     Vehicle(int gid, int lid, std::pair<int, int> pos, float speed) : gid(gid), lid(lid), rotary_exit_flag(rand() % 100 < PROBABILITY_EXIT), position(std::move(pos)),  speed(speed) {}
     Vehicle(int gid, int lid, CA_Cell& c, float speed) : gid(gid), lid(lid), rotary_exit_flag(rand() % 100 < PROBABILITY_EXIT), position(c.position),  speed(speed) {}
     Vehicle(int gid, int lid, const CA_Cell& c, float speed) : gid(gid), lid(lid), rotary_exit_flag(rand() % 100 < PROBABILITY_EXIT), position(c.position),  speed(speed) {}
+    //Vehicle(Vehicle&& v) noexcept :  gid(v.gid), lid(v.lid), rotary_exit_flag(v.rotary_exit_flag), position(std::move(v.position)), speed(v.speed)  {};
+    //Vehicle(const Vehicle& v) noexcept :  gid(v.gid), lid(v.lid), rotary_exit_flag(v.rotary_exit_flag), position(v.position), speed(v.speed)  {};
+
+
 
     friend std::ostream &operator<<(std::ostream &os, const Vehicle &vehicle) {
         int x,y;

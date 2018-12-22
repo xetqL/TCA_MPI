@@ -26,7 +26,7 @@ add_executable(CA_road
         include/rules.hpp
         include/communication.hpp
         include/unloading_model.hpp
-        src/main.cpp include/tca_utils.hpp)
+        src/main.cpp include/tca_utils.hpp include/tca_io.hpp)
 
 message(${CMAKE_SOURCE_DIR})
 
