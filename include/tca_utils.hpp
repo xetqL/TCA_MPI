@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <algorithm>
 
+
 template<class key, class val>
 val get_or_default(const std::unordered_map<key, val> map, const key k1, const val def){
     if(map.find(k1) == map.cend())
@@ -17,8 +18,31 @@ val get_or_default(const std::unordered_map<key, val> map, const key k1, const v
 }
 
 template<class Map, class key>
-bool exists(const Map &map, const key k1){
+inline bool exists(const Map &map, const key k1){
     return map.find(k1) != map.cend();
+}
+
+inline const Vehicle* get_ptr_vehicle(const std::unordered_map<long long, Vehicle>& vehicles_map,
+                         const std::unordered_map<long long, Vehicle>& vehicles_map_remote,
+                         long long xy) {
+
+    if (exists(vehicles_map, xy)){
+        return &vehicles_map.at(xy);
+    } else if(exists(vehicles_map_remote, xy)) {
+        return &vehicles_map_remote.at(xy);
+    } else {
+        return nullptr;
+    }
+}
+
+template<class Map, class key>
+int exists(const Map &map1, const Map &map2, const key k1){
+    if(map1.find(k1) != map1.cend())
+        return 1;
+    if(map2.find(k1) != map2.cend())
+        return 2;
+
+    return 0;
 }
 
 inline long long position_to_cell(int msx, int msy, const std::pair<int, int> & position) {
@@ -58,10 +82,10 @@ void randomize_cars_position(size_t sx, size_t sy, const std::unordered_map<long
     for (size_t y = 0; y < sy; y++) {
         for (size_t x = 0; x < sx; x++) {
             if (ca_matrix.at(position_to_cell(sx, sy, x, y)).direction != NoDirection) {
-                if (rand() % 100 > 70) {
-                    vehicle_matrix[position_to_cell(sx, sy, x, y)] = Vehicle(gid, gid, x, y, 1);
-                    gid++;
-                }
+                //if (rand() % 100 > 0) {
+                vehicle_matrix[position_to_cell(sx, sy, x, y)] = Vehicle(gid, gid, x, y, 1);
+                gid++;
+                //}
             }
         }
     }

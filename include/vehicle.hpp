@@ -9,7 +9,7 @@
 #include <ostream>
 #include "ca_cell.hpp"
 #include "communication.hpp"
-#define PROBABILITY_EXIT 30
+#define PROBABILITY_EXIT 100
 struct Vehicle {
     int gid = 0;
     int lid = 0;
@@ -25,8 +25,6 @@ struct Vehicle {
     //Vehicle(Vehicle&& v) noexcept :  gid(v.gid), lid(v.lid), rotary_exit_flag(v.rotary_exit_flag), position(std::move(v.position)), speed(v.speed)  {};
     //Vehicle(const Vehicle& v) noexcept :  gid(v.gid), lid(v.lid), rotary_exit_flag(v.rotary_exit_flag), position(v.position), speed(v.speed)  {};
 
-
-
     friend std::ostream &operator<<(std::ostream &os, const Vehicle &vehicle) {
         int x,y;
         std::tie(x, y) = vehicle.position;
@@ -34,6 +32,14 @@ struct Vehicle {
            << " position: (" << x << ","<< y <<") speed: " << vehicle.speed;
         return os;
     }
+
+    char as_char() const {
+        return '#';
+    }
+
+    std::array<double, 2> get_position_as_array() {
+        return {(double) position.first, (double) position.second};
+    };
 
     static CommunicationDatatype register_datatype() {
 

@@ -66,4 +66,20 @@ void print(size_t sx, size_t sy, const std::unordered_map<long long, CA_Cell> &c
     }
 }
 
+void fprint(std::ofstream& out, size_t sx, size_t sy, const std::unordered_map<long long, CA_Cell> &ca_matrix,
+           const std::unordered_map<long long, Vehicle> &vehicle_matrix) {
+    for (size_t y = 0; y < sy; y++) {
+        for (size_t x = 0; x < sx; x++) {
+            auto xy = position_to_cell(sx, sy, x, y);
+            if (ca_matrix.at(xy).direction == NoDirection) out << ca_matrix.at(xy).as_char();
+            else {
+                if (exists(vehicle_matrix, xy))
+                    out << vehicle_matrix.at(xy).as_char();
+                else out << " ";
+            }
+        }
+        out << std::endl;
+    }
+}
+
 #endif //CA_ROAD_TCA_IO_HPP

@@ -20,6 +20,10 @@ struct CA_Cell {
         os << "direction: " << driving_to_char(cell.direction) << " position: [" << cell.position.first << ","<<cell.position.second<<"]";
         return os;
     }
+
+    char as_char() const {
+        return driving_to_char(direction);
+    }
 };
 
 #endif //CA_ROAD_CA_CELL_HPP

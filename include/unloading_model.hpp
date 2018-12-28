@@ -23,23 +23,23 @@ namespace load_balancing {
          * @param top the new communicator for people how will communicate on "top".
          */
         //TODO: If everybody has increasing load, then nobody in top, then the execution will fail.
-        int get_communicator(double my_load_slope, int my_rank, MPI_Comm bottom, std::vector<int> *increasing_cpus, MPI_Comm *top) {
+        int get_communicator(double my_load_slope, int my_rank, MPI_Comm bottom, std::vector<int> *increasing_cpus) {
             //top is set for PE that does not have an increasing load others have undefined.
             //bottom is simply MPI_COMM_WORLD normally
             //easy as fuck right?
             const int TOP_CPU_TAG = 800;
 
             int err = LB_OK;
-
-            MPI_Comm_split(bottom, my_load_slope < SLOPE_THRESHOLD ? COMM_TOP_INDEX : COMM_INCREASING_INDEX, my_rank, top);
+            MPI_Comm top;
+            MPI_Comm_split(bottom, my_load_slope < SLOPE_THRESHOLD ? COMM_TOP_INDEX : COMM_INCREASING_INDEX, my_rank, &top);
             MPI_Group top_gr;
             MPI_Group bottom_gr; MPI_Comm_group(bottom, &bottom_gr);
             int bottom_gr_size; MPI_Comm_size(bottom, &bottom_gr_size);
 
             if(my_load_slope < SLOPE_THRESHOLD){ //top_group
 
-                int top_rank; MPI_Comm_rank(*top, &top_rank);
-                MPI_Comm_group(*top, &top_gr);
+                int top_rank; MPI_Comm_rank(top, &top_rank);
+                MPI_Comm_group(top, &top_gr);
 
                 int top_gr_size; MPI_Group_size(top_gr, &top_gr_size);
 
@@ -54,22 +54,17 @@ namespace load_balancing {
                     increasing_cpus->resize(increasing_gr_size); std::iota(increasing_cpus->begin(), increasing_cpus->end(), 0);
                     MPI_Group_translate_ranks(increasing_gr, increasing_cpus->size(), &increasing_cpus->front(), bottom_gr, &increasing_cpus->front());
                 }
-
             } else { //increasing_group
-
-                int top_gr_size; MPI_Comm_size(*top, &top_gr_size);
+                int top_gr_size; MPI_Comm_size(top, &top_gr_size);
                 if(top_gr_size > bottom_gr_size / 2) err = LB_ERR_TOO_MANY_INCREASING;
-                else{
-                    MPI_Comm_group(*top, &top_gr);
+                else {
+                    MPI_Comm_group(top, &top_gr);
                     increasing_cpus->resize(top_gr_size); std::iota(increasing_cpus->begin(), increasing_cpus->end(), 0);
                     MPI_Group_translate_ranks(top_gr, increasing_cpus->size(), &increasing_cpus->front(), bottom_gr, &increasing_cpus->front());
                 }
-
-                *top = MPI_COMM_NULL;
             }
 
             if(err) {
-                *top = MPI_COMM_NULL;
                 increasing_cpus->clear();
             }
 
@@ -78,11 +73,11 @@ namespace load_balancing {
 
 
         template<class A>
-        Zoltan_Struct* divide_data_into_top_bottom2(std::vector<A> *data_bottom, //becomes bottom
-                                                   std::vector<A> *data_top,
-                                                   const std::vector<int>& increasing_cpus,
-                                                   const MPI_Datatype datatype,
-                                                   MPI_Comm bottom) {
+        Zoltan_Struct* divide_data_into_top_bottom2(std::vector<A> *data_bottom, // becomes bottom
+                                                    std::vector<A>  *data_top,
+                                                    const std::vector<int>& increasing_cpus,
+                                                    const MPI_Datatype datatype,
+                                                    MPI_Comm bottom) {
             const int TAG = 900;
             std::vector<A> top_mesh_data;
             Zoltan_Struct* zz_top = nullptr;
@@ -138,7 +133,7 @@ namespace load_balancing {
                   MPI_Comm bottom,
                   const std::vector<int>& increasing_cpus,
                   const MPI_Datatype datatype,
-                  const double cell_size = 0.000625) {
+                  const double cell_size = 1.0) {
             int my_bottom_rank; MPI_Comm_rank(bottom, &my_bottom_rank);
             int wsize; MPI_Comm_size(bottom, &wsize);
 
