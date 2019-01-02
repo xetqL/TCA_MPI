@@ -9,7 +9,8 @@
 #include <ostream>
 #include "ca_cell.hpp"
 #include "communication.hpp"
-#define PROBABILITY_EXIT 100
+#define PROBABILITY_EXIT 50
+
 struct Vehicle {
     int gid = 0;
     int lid = 0;

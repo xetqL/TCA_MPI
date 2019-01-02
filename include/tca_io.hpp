@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include "ca_cell.hpp"
 #include "tca_utils.hpp"
+#include "../src/zupply.hpp"
 
 std::pair<int, int> read_roadfile(std::string filename, std::vector<std::vector<CA_Cell> > *ca_matrix) {
     std::ifstream f;
@@ -81,5 +82,56 @@ void fprint(std::ofstream& out, size_t sx, size_t sy, const std::unordered_map<l
         out << std::endl;
     }
 }
+
+uint8_t* to_frame(size_t sx, size_t sy, const std::unordered_map<long long, CA_Cell> &ca_matrix,
+                          const std::unordered_map<long long, Vehicle> &vehicle_matrix){
+    const size_t sz = sy*sx;
+    uint8_t *ret = new uint8_t[sz*3];
+    for (size_t xy = 0; xy < sz; xy+=3) {
+        if (exists(vehicle_matrix, xy)){
+            ret[xy]   = 0;
+            ret[xy+1] = 0;
+            ret[xy+2] = 0;
+        }
+        else {
+            ret[xy]   = 0;
+            ret[xy+1] = 0;
+            ret[xy+2] = 0;
+        }
+    }
+    /*for (size_t xy = 0; xy < sz; xy++) {
+        if (exists(vehicle_matrix, xy))
+            ret[xy] = 0;
+        else ret[xy] = 0;
+    }*/
+    return ret;
+}
+
+zz::Image zzframe(std::string fname, size_t sx, size_t sy, const std::unordered_map<long long, CA_Cell> &ca_matrix,
+                  const std::unordered_map<long long, Vehicle> &vehicle_matrix){
+    const size_t sz = sy*sx;
+    zz::Image ret(sy, sx, 3);
+    for (size_t y = 0; y < sy; y++) {
+        for (size_t x = 0; x < sx; x++) {
+            auto xy = position_to_cell(sx, sy, x, y);
+            if (exists(vehicle_matrix, xy)) {
+                ret(y, x, 0) = 0;
+                ret(y, x, 1) = 0;
+                ret(y, x, 2) = 0;
+            } else {
+                ret(y, x, 0) = 255;
+                ret(y, x, 1) = 255;
+                ret(y, x, 2) = 255;
+            }
+        }
+    }
+    /*for (size_t xy = 0; xy < sz; xy++) {
+        if (exists(vehicle_matrix, xy))
+            ret[xy] = 0;
+        else ret[xy] = 0;
+    }*/
+    return ret;
+}
+
 
 #endif //CA_ROAD_TCA_IO_HPP

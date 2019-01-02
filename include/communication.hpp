@@ -178,12 +178,12 @@ void zoltan_migrate_particles(std::vector<A> &data,
             export_gids.push_back(data.at(data_id).gid);
             export_lids.push_back(data.at(data_id).lid);
             export_procs.push_back(PE);
-//if the current element has to be moved, then swap with the last and pop it out (dont need to move the pointer also)
-//swap iterator values in constant time
+            //if the current element has to be moved, then swap with the last and pop it out (dont need to move the pointer also)
+            //swap iterator values in constant time
             std::iter_swap(data.begin()+ data_id, data.end() - 1);
-//get the value and push it in the "to migrate" vector
+// get the value and push it in the "to migrate" vector
             data_to_migrate.at(PE).push_back(*(data.end()- 1));
-//pop the head of the list in constant time
+// pop the head of the list in constant time
             data.pop_back();
             num_known++;
         } else data_id++; //if the element must stay with me then check the next one
@@ -242,6 +242,12 @@ void zoltan_migrate_particles(std::vector<A> &data,
 
     MPI_Waitall(reqs.size(), &reqs.front(), MPI_STATUSES_IGNORE);
 
+}
+
+inline bool point_belongs_to_me(Zoltan_Struct* load_balancer, std::array<double, 2> pos, int my_rank){
+    int PE;
+    Zoltan_LB_Point_Assign(load_balancer, &pos.front(), &PE);
+    return PE == my_rank;
 }
 
 

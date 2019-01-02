@@ -9,9 +9,15 @@
 #include <unordered_map>
 #include <algorithm>
 
+template<class key, class val, class retval, class RetFunc>
+retval get_or_default(const std::unordered_map<key, val> map, const key k1, const retval def,  RetFunc f){
+    if(map.find(k1) == map.cend())
+        return def;
+    return f(map.at(k1));
+}
 
-template<class key, class val>
-val get_or_default(const std::unordered_map<key, val> map, const key k1, const val def){
+template<class key, class val, class retval>
+retval get_or_default(const std::unordered_map<key, val> map, const key k1, const retval def) {
     if(map.find(k1) == map.cend())
         return def;
     return map.at(k1);
@@ -54,7 +60,7 @@ inline long long position_to_cell(int msx, int msy, const int x, const int y) {
 }
 
 inline std::pair<int, int> cell_to_position(int msx, int msy, long long position){
-    return std::make_pair(position % msx, (int) position / msy);
+    return std::make_pair(position % msx, (int) position / msx);
 }
 
 

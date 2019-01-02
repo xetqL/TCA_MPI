@@ -12,8 +12,9 @@
 #include "../include/zoltan_fn.hpp"
 #include "../include/unloading_model.hpp"
 #include "../include/tca_io.hpp"
-
+#include "../include/gif.h"
 //#include "../include/geometric_load_balancer.hpp"
+#include "zupply.hpp"
 
 #define SPATIAL_DISCRETISATION_X = 7.5 //the average length a conventional vehicle occupies in a closely packed jam (and as such, its width is neglected),
 #define TEMPORAL_DISCRETISATION = 1.0 //typical driver’s reaction time
@@ -45,22 +46,42 @@ unordered_map<long long, Vehicle> update(const int msx, const int msy,
                                          const unordered_map<long long,  Vehicle> &vehicles_map) {
     unordered_map<long long, Vehicle> vehicles_map_new;
     for (const auto &v : vehicles_map) {
-        apply_rule184(msx, msy, ca_matrix, v.second, vehicles_map, vehicles_map_new);
+        sequential::apply_rule184(msx, msy, ca_matrix, v.second, vehicles_map, vehicles_map_new);
     }
 
     return vehicles_map_new;
 }
 
-unordered_map<long long, Vehicle> parallel_update(
-                                                  const int msx, const int msy,
+unordered_map<long long, Vehicle> parallel_update(const int msx, const int msy,
                                                   const unordered_map<long long,  CA_Cell> &ca_matrix,
                                                   const unordered_map<long long,  Vehicle> &vehicles_map,
                                                   const unordered_map<long long,  Vehicle> &remote_vehicles_map) {
     unordered_map<long long, Vehicle> vehicles_map_new;
+
     for (const auto &v : vehicles_map) {
         parallel::apply_rule184(msx, msy, ca_matrix, v.second, vehicles_map, remote_vehicles_map, vehicles_map_new);
     }
+
     return vehicles_map_new;
+}
+
+void generate_vehicles(const int my_rank,
+                       const int msx, const int msy, Zoltan_Struct* zz,
+                       const unordered_map<long long,  CA_Cell> &ca_matrix,
+                             unordered_map<long long,  Vehicle> &vehicles_map) {
+
+    std::vector<std::pair<long long, CA_Cell>> cells;
+    std::copy_if(ca_matrix.cbegin(), ca_matrix.cend(), std::back_inserter(cells), [](auto cell){return cell.second.source;});
+    //add new vehicles
+    std::array<double, 2> pos = {0, 0};
+    int PE;
+    for (auto &cell : cells) {
+        std::tie(pos[0], pos[1]) = cell_to_position(msx, msy, cell.first);
+        Zoltan_LB_Point_Assign(zz, &pos.front(), &PE);
+        if(my_rank == PE && !exists(vehicles_map, cell.first) && cell.second.has_to_generate(0)) {
+            vehicles_map[cell.first] = Vehicle(1, vehicles_map.size() + 1, (int) pos[0], (int) pos[1], 1);
+        }
+    }
 }
 
 int main(int argc, char **argv) {
@@ -73,10 +94,15 @@ int main(int argc, char **argv) {
     int SIZE_X, SIZE_Y;
     std::ofstream out;
 
+
     //vector<vector<CA_Cell> > ca_matrix;
     unordered_map<long long, CA_Cell> ca_matrix;
 
     std::tie(SIZE_X, SIZE_Y) = read_roadfile(argv[1], &ca_matrix);
+
+
+    for(int i=0; i < SIZE_Y; i+=4)
+        ca_matrix[position_to_cell(SIZE_X,SIZE_Y, 0, 2+i)].source = true;
 
     //vector<Vehicle> vehicles;
 
@@ -84,8 +110,8 @@ int main(int argc, char **argv) {
     //vector<vector<Vehicle *> > vehicle_matrix(SIZE_Y, vector<Vehicle *>(SIZE_X, nullptr));
 
     auto datatype = Vehicle::register_datatype();
-
-    randomize_cars_position(SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix);
+    //if(!rank)
+        //randomize_cars_position(SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix);
     auto vehicles = to_vec(vehicle_matrix);
 
     fprint(out, SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix);
@@ -95,12 +121,14 @@ int main(int argc, char **argv) {
     //auto remote_data = zoltan_exchange_data(vehicles, zz, datatype.elements_datatype, bottom, recv, sent);
     //std::for_each(remote_data.begin(), remote_data.end(), [](auto v){std::cout << v << std::endl;});
 
-    if(wsize > 1)  zoltan_load_balance(&vehicles, zz, ENABLE_AUTOMATIC_MIGRATION);
+    zoltan_load_balance(&vehicles, zz, ENABLE_AUTOMATIC_MIGRATION);
 
     int step = 0;
     const std::string prefix_fname(argv[2]);
-    while (step < std::atoi(argv[3])) {
-        if(!rank) out.open(prefix_fname + std::to_string(step), std::ofstream::out);
+    const int MAX_STEP = std::atoi(argv[3]);
+    while (step < MAX_STEP) {
+
+        //if(!rank) out.open(prefix_fname + std::to_string(step), std::ofstream::out);
         MPI_Barrier(bottom);
 
         int recv, sent;
@@ -115,27 +143,33 @@ int main(int argc, char **argv) {
         auto vehicle_matrix_remote = to_map(SIZE_X, SIZE_Y, remote_data);
         vehicle_matrix = to_map(SIZE_X, SIZE_Y, vehicles);
         vehicle_matrix = parallel_update(SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix, vehicle_matrix_remote);
-        std::cout << vehicle_matrix.size() << std::endl;
+        generate_vehicles(rank, SIZE_X, SIZE_Y, zz, ca_matrix, vehicle_matrix);
         vehicles = to_vec(vehicle_matrix);
 
         // Stop parallel computation
 
         /********************************Start load balancing and migration**************************************/
 
-        if(wsize > 1){
-            zoltan_migrate_particles(vehicles, zz, datatype.elements_datatype, bottom);
-            zoltan_load_balance(&vehicles, zz, ENABLE_AUTOMATIC_MIGRATION);
-        }
+        zoltan_migrate_particles(vehicles, zz, datatype.elements_datatype, bottom);
+        zoltan_load_balance(&vehicles, zz, ENABLE_AUTOMATIC_MIGRATION);
+
         // Stop load balancing and migration
 
         /****************************************Start printing**************************************************/
 
         std::vector<Vehicle> all_vehicles;
-        if(wsize > 1) gather_elements_on(vehicles, 0, all_vehicles, datatype.elements_datatype, bottom);
-        else all_vehicles = vehicles;
+        if(wsize > 1)
+            gather_elements_on(vehicles, 0, all_vehicles, datatype.elements_datatype, bottom);
+        else
+            all_vehicles = vehicles;
+
         if(!rank) {
             auto vehicle_matrix_print = to_map(SIZE_X, SIZE_Y, all_vehicles);
-            fprint(out, SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix_print);
+            auto img = zzframe( std::to_string(step)+prefix_fname,SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix_print);
+            auto step_str =  std::to_string(step);
+            step_str = std::string(std::to_string(MAX_STEP).length() - step_str.length(), '0') + step_str;
+            img.save(( step_str+prefix_fname).c_str());
+            //fprint(out, SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix_print);
         }
 
         // Stop printing
@@ -143,6 +177,7 @@ int main(int argc, char **argv) {
         step++;
         if(!rank) out.close();
     }
+
     MPI_Finalize();
     return 0;
 }
