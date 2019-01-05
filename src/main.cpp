@@ -94,15 +94,24 @@ int main(int argc, char **argv) {
     int SIZE_X, SIZE_Y;
     std::ofstream out;
 
+    unordered_map<long long, CA_Cell> ca_matrix;
+    std::cout << argc << std::endl;
+    const std::string prefix_fname(argv[1]);
+    const int MAX_STEP = std::atoi(argv[2]);
+    if(argc == 5) {
+        SIZE_X = std::atoi(argv[3]);
+        SIZE_Y = std::atoi(argv[4]);
+        ca_matrix = generate_random_manhattan(SIZE_X, SIZE_Y);
+
+    } else {
+        std::tie(SIZE_X, SIZE_Y) = read_roadfile(argv[3], &ca_matrix);
+    }
+    create_random_left_sources(3, SIZE_X, SIZE_Y, &ca_matrix);
+
+    //
 
     //vector<vector<CA_Cell> > ca_matrix;
-    unordered_map<long long, CA_Cell> ca_matrix;
 
-    std::tie(SIZE_X, SIZE_Y) = read_roadfile(argv[1], &ca_matrix);
-
-
-    for(int i=0; i < SIZE_Y; i+=4)
-        ca_matrix[position_to_cell(SIZE_X,SIZE_Y, 0, 2+i)].source = true;
 
     //vector<Vehicle> vehicles;
 
@@ -110,8 +119,8 @@ int main(int argc, char **argv) {
     //vector<vector<Vehicle *> > vehicle_matrix(SIZE_Y, vector<Vehicle *>(SIZE_X, nullptr));
 
     auto datatype = Vehicle::register_datatype();
-    //if(!rank)
-        //randomize_cars_position(SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix);
+    if(!rank)
+        randomize_cars_position(SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix);
     auto vehicles = to_vec(vehicle_matrix);
 
     fprint(out, SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix);
@@ -124,8 +133,7 @@ int main(int argc, char **argv) {
     zoltan_load_balance(&vehicles, zz, ENABLE_AUTOMATIC_MIGRATION);
 
     int step = 0;
-    const std::string prefix_fname(argv[2]);
-    const int MAX_STEP = std::atoi(argv[3]);
+
     while (step < MAX_STEP) {
 
         //if(!rank) out.open(prefix_fname + std::to_string(step), std::ofstream::out);
@@ -165,7 +173,7 @@ int main(int argc, char **argv) {
 
         if(!rank) {
             auto vehicle_matrix_print = to_map(SIZE_X, SIZE_Y, all_vehicles);
-            auto img = zzframe( std::to_string(step)+prefix_fname,SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix_print);
+            auto img = zzframe( SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix_print);
             auto step_str =  std::to_string(step);
             step_str = std::string(std::to_string(MAX_STEP).length() - step_str.length(), '0') + step_str;
             img.save(( step_str+prefix_fname).c_str());

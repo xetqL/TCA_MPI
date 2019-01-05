@@ -107,7 +107,7 @@ uint8_t* to_frame(size_t sx, size_t sy, const std::unordered_map<long long, CA_C
     return ret;
 }
 
-zz::Image zzframe(std::string fname, size_t sx, size_t sy, const std::unordered_map<long long, CA_Cell> &ca_matrix,
+zz::Image zzframe(const size_t sx, const size_t sy, const std::unordered_map<long long, CA_Cell> &ca_matrix,
                   const std::unordered_map<long long, Vehicle> &vehicle_matrix){
     const size_t sz = sy*sx;
     zz::Image ret(sy, sx, 3);
@@ -119,17 +119,18 @@ zz::Image zzframe(std::string fname, size_t sx, size_t sy, const std::unordered_
                 ret(y, x, 1) = 0;
                 ret(y, x, 2) = 0;
             } else {
-                ret(y, x, 0) = 255;
-                ret(y, x, 1) = 255;
-                ret(y, x, 2) = 255;
+                if(ca_matrix.at(xy).direction != NoDirection){
+                    ret(y, x, 0) = 128;
+                    ret(y, x, 1) = 128;
+                    ret(y, x, 2) = 128;
+                } else {
+                    ret(y, x, 0) = 255;
+                    ret(y, x, 1) = 255;
+                    ret(y, x, 2) = 255;
+                }
             }
         }
     }
-    /*for (size_t xy = 0; xy < sz; xy++) {
-        if (exists(vehicle_matrix, xy))
-            ret[xy] = 0;
-        else ret[xy] = 0;
-    }*/
     return ret;
 }
 

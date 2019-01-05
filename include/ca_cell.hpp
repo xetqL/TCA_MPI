@@ -14,7 +14,6 @@ struct CA_Cell {
     bool source = false;
     mutable int PROBABILITY_GENERATE = rand() % 100;
 
-
     CA_Cell() = default;
     CA_Cell(char c) : direction(char_to_driving(c)) {}
     CA_Cell(std::pair<int,int> position, char c) : position(std::move(position)), direction(char_to_driving(c)) {}

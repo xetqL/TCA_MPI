@@ -78,7 +78,6 @@ void randomize_cars_position(size_t sx, size_t sy, const std::vector<std::vector
             }
         }
     }
-
 }
 
 void randomize_cars_position(size_t sx, size_t sy, const std::unordered_map<long long, CA_Cell> &ca_matrix,
@@ -88,10 +87,10 @@ void randomize_cars_position(size_t sx, size_t sy, const std::unordered_map<long
     for (size_t y = 0; y < sy; y++) {
         for (size_t x = 0; x < sx; x++) {
             if (ca_matrix.at(position_to_cell(sx, sy, x, y)).direction != NoDirection) {
-                //if (rand() % 100 > 0) {
-                vehicle_matrix[position_to_cell(sx, sy, x, y)] = Vehicle(gid, gid, x, y, 1);
-                gid++;
-                //}
+                if (rand() % 100 > 66) {
+                    vehicle_matrix[position_to_cell(sx, sy, x, y)] = Vehicle(gid, gid, x, y, 1);
+                    gid++;
+                }
             }
         }
     }
@@ -127,8 +126,6 @@ void print(size_t sx, size_t sy, const std::vector<std::vector<CA_Cell> > &ca_ma
         std::cout << std::endl;
     }
 }
-
-
 
 int count_car(int msx, int msy, std::vector<std::vector<Vehicle *> >& vehicle_matrix){
     int c = 0;
@@ -177,6 +174,61 @@ std::unordered_map<long long, Vehicle> to_map(int msx, int msy, std::vector<Vehi
         vehicle_matrix[xy] = std::move(vec[i]);
     }
     return vehicle_matrix;
+}
+
+std::unordered_map<long long, CA_Cell> generate_random_manhattan (const size_t SIZE_X, const size_t SIZE_Y) {
+    const long long MANHATTAN_LENGTH = SIZE_X * SIZE_Y;
+    std::unordered_map<long long, CA_Cell> manhattan;
+    manhattan.reserve(MANHATTAN_LENGTH);
+
+    std::vector<int> roads_position_x;
+    for(int last = (rand() % 7) + 1; (last+2) < SIZE_X; last += (rand() % 7) + 3){
+        roads_position_x.push_back(last);
+    }
+
+    std::vector<int> roads_position_y;
+    for(int last = (rand() % 7) + 1; (last + 2) < SIZE_Y; last += (rand() % 7) + 3){
+        roads_position_y.push_back(last);
+    }
+
+    for(long long i = 0; i < MANHATTAN_LENGTH; ++i) {
+        int x, y; std::tie(x,y) = cell_to_position(SIZE_X, SIZE_Y, i);
+        manhattan[i] = { std::make_pair(x, y), NoDirection };
+    }
+
+    for(const int road_x : roads_position_x){
+        for(int road_y = 0; road_y < SIZE_Y; road_y++) {
+            long long cell_idx = position_to_cell(SIZE_X, SIZE_Y, std::make_pair(road_x, road_y));
+            manhattan[cell_idx].direction = GoingDown;
+            manhattan[cell_idx+1].direction = GoingUp;
+        }
+    }
+
+    for(const int road_y : roads_position_y){
+        for(int road_x = 0; road_x < SIZE_X; road_x++) {
+            long long cell_idx = position_to_cell(SIZE_X, SIZE_Y, std::make_pair(road_x, road_y));
+            if(manhattan[cell_idx].direction != NoDirection)
+                manhattan[cell_idx].direction = Rotary;
+            else
+                manhattan[cell_idx].direction = GoingLeft;
+
+            if(manhattan[cell_idx+SIZE_X].direction != NoDirection)
+                manhattan[cell_idx+SIZE_X].direction = Rotary;
+            else
+                manhattan[cell_idx+SIZE_X].direction = GoingRight;
+        }
+    }
+    return manhattan;
+}
+
+void create_random_left_sources(int n, const size_t SIZE_X, const size_t SIZE_Y, std::unordered_map<long long, CA_Cell> *ca_matrix) {
+    const long long MANHATTAN_LENGTH = SIZE_X * SIZE_Y;
+    for(long long i = 0; i < MANHATTAN_LENGTH; i += SIZE_X) {
+        if(ca_matrix->at(i).direction != NoDirection && rand() % 2) {
+            ca_matrix->at(i).source = true;
+            n--; if(n==0) break;
+        }
+    }
 }
 
 #endif //CA_ROAD_TCA_UTILS_HPP

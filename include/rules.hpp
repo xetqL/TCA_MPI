@@ -372,7 +372,6 @@ void apply_rule184(const int msx, const int msy,
     auto D = Ni.direction;
     switch (D) {
         case GoingRight: {
-
             if (x + 1 == msx) { // deletion at boundary, if parallel, ask neighbor
                 //vehicles_map_new[y][x] = nullptr;
                 break;
