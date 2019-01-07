@@ -95,14 +95,12 @@ int main(int argc, char **argv) {
     std::ofstream out;
 
     unordered_map<long long, CA_Cell> ca_matrix;
-    std::cout << argc << std::endl;
     const std::string prefix_fname(argv[1]);
     const int MAX_STEP = std::atoi(argv[2]);
     if(argc == 5) {
         SIZE_X = std::atoi(argv[3]);
         SIZE_Y = std::atoi(argv[4]);
         ca_matrix = generate_random_manhattan(SIZE_X, SIZE_Y);
-
     } else {
         std::tie(SIZE_X, SIZE_Y) = read_roadfile(argv[3], &ca_matrix);
     }
@@ -132,9 +130,22 @@ int main(int argc, char **argv) {
 
     zoltan_load_balance(&vehicles, zz, ENABLE_AUTOMATIC_MIGRATION);
 
+    std::normal_distribution<double> unif(0.05, 0.1);
+
+    std::default_random_engine re(rank);
+    double slope = unif(re);
+    std::vector<int> incr_cpu;
+    auto err = load_balancing::esoteric::get_communicator(slope, rank, bottom, &incr_cpu);
+    if(err) std::cout << err << " no esoteric call" << std::endl;
+
+    std::vector<Vehicle> top_vehicles;
+    auto zztop = load_balancing::esoteric::divide_data_into_top_bottom(&vehicles , &top_vehicles, incr_cpu, datatype.elements_datatype, bottom);
+
+    auto remote_vehicle = load_balancing::esoteric::exchange(&vehicles, &top_vehicles, zz, zztop, bottom, incr_cpu, datatype.elements_datatype, 1.1);
+    std::for_each(remote_vehicle.cbegin(), remote_vehicle.cend(), [](auto v){ std::cout << v << std::endl; });
     int step = 0;
 
-    while (step < MAX_STEP) {
+    while (false) {
 
         //if(!rank) out.open(prefix_fname + std::to_string(step), std::ofstream::out);
         MPI_Barrier(bottom);

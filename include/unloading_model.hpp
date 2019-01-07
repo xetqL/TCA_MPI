@@ -7,6 +7,7 @@
 
 #include <vector>
 #include <tuple>
+#include <set>
 
 #include "zoltan_fn.hpp"
 
@@ -73,7 +74,7 @@ namespace load_balancing {
 
 
         template<class A>
-        Zoltan_Struct* divide_data_into_top_bottom2(std::vector<A> *data_bottom, // becomes bottom
+        Zoltan_Struct* divide_data_into_top_bottom(std::vector<A> *data_bottom, // becomes bottom
                                                     std::vector<A>  *data_top,
                                                     const std::vector<int>& increasing_cpus,
                                                     const MPI_Datatype datatype,
@@ -93,6 +94,7 @@ namespace load_balancing {
             } else data_bottom->clear();
             return zz_top;
         }
+        namespace {
 
         template<class A>
         A take_out(const size_t data_id, std::vector<A> *data) {
@@ -100,6 +102,8 @@ namespace load_balancing {
             A el = *(data->end() - 1);
             data->pop_back();
             return el;
+        }
+
         }
 
         /***************************************************************************************************************
@@ -137,39 +141,52 @@ namespace load_balancing {
             int my_bottom_rank; MPI_Comm_rank(bottom, &my_bottom_rank);
             int wsize; MPI_Comm_size(bottom, &wsize);
 
+            /// Zoltan Invert List import variables
+            ZOLTAN_ID_PTR known_gids, known_lids;
+            ZOLTAN_ID_PTR found_gids, found_lids;
+            int *found_procs, *found_parts;
+            std::vector<int> num_import_from_procs(wsize);
+            std::vector<int> import_from_procs;
+
+
             const bool in_top_partition = std::find(increasing_cpus.cbegin(), increasing_cpus.cend(), my_bottom_rank) == increasing_cpus.cend();
-            const int BOTTOM_SEND_TAG=903, TOP_SEND_TAG=904;
+            const int EXCHANGE_SEND_TAG_TOP=903, EXCHANGE_SEND_TAG_BOTTOM=904;
+
+            std::vector<A> buffer, remote_data_gathered;
+
             std::vector<std::vector<A>> data_to_migrate(wsize), data_to_migrate_bottom(wsize);
-            std::vector<int> export_gids_b, export_lids_b, export_procs_b,
-                             export_gids, export_lids, export_procs;
-            std::vector<int> parts; int num_found = 0, num_known = 0, num_known_top = 0, num_known_bottom = 0;
+            std::vector<int> export_gids_b, export_lids_b, export_procs_b, export_gids, export_lids, export_procs;
+            std::vector<int> parts; int num_found = 0, num_known = 0;
+
             num_known = 0;
-
-            size_t data_id;
-
-            // Computing exchange for bottom particles
-            data_id = 0;
+            size_t data_id = 0;
             std::vector<int> PEs_top(wsize, -1), PEs_bottom(wsize, -1);
             const size_t bot_data_size = bottom_data->size();
+
+            /*********************************************************************************************************
+             * COMPUTE DESTINATION FOR DATA ON BOTTOM PROCS
+             *********************************************************************************************************/
+
             while (data_id < bot_data_size) {
 
                 auto pos_in_double = std::apply([](auto first, auto second) { return std::make_pair((double) first, (double) second); }, bottom_data->at(data_id).position);
 
                 int num_found_proc, num_found_part;
+
                 /***********************************************************************************
                  * Check if a work unit must be shared with someone within the bottom partitioning *
                  ***********************************************************************************/
                 Zoltan_LB_Box_PP_Assign(zoltan_bottom,
-                                     pos_in_double.at(0) - cell_size, pos_in_double.at(1) - cell_size, 0.0,
-                                     pos_in_double.at(0) + cell_size, pos_in_double.at(1) + cell_size, 0.0,
+                                     pos_in_double.first - cell_size, pos_in_double.second - cell_size, 0.0,
+                                     pos_in_double.first + cell_size, pos_in_double.second + cell_size, 0.0,
                                      &PEs_bottom.front(), &num_found_proc, &parts.front(), &num_found_part);
 
                 /**********************************************************************************
                  * Check if a work unit must be shared with someone within the top partitioning   *
                  **********************************************************************************/
                 Zoltan_LB_Box_PP_Assign(zoltan_top,
-                                     pos_in_double.at(0) - cell_size, pos_in_double.at(1) - cell_size, 0.0,
-                                     pos_in_double.at(0) + cell_size, pos_in_double.at(1) + cell_size, 0.0,
+                                     pos_in_double.first - cell_size, pos_in_double.second - cell_size, 0.0,
+                                     pos_in_double.first + cell_size, pos_in_double.second + cell_size, 0.0,
                                      &PEs_top.front(), &num_found_proc, &parts.front(), &num_found_part);
 
                 std::vector<int> PEs_distinct(PEs_bottom.size() + PEs_top.size());
@@ -191,32 +208,95 @@ namespace load_balancing {
                 data_id++; //if the element must stay with me then check the next one
             }
 
-            // Computing exchange for top particles
+            /*********************************************************************************************************
+             * EXCHANGE DATA WITH BOTTOM
+             *********************************************************************************************************/
+
+            known_gids = (ZOLTAN_ID_PTR) &export_gids.front();
+            known_lids = (ZOLTAN_ID_PTR) &export_lids.front();
+
+            // Compute who has to send me something via Zoltan.
+            Zoltan_Invert_Lists(zoltan_bottom, num_known, known_gids, known_lids, &export_procs[0], &export_procs[0],
+                                &num_found, &found_gids, &found_lids, &found_procs, &found_parts);
+
+            // Compute how many elements I have to import from others, and from whom.
+            for (size_t i = 0; i < num_found; ++i)
+                num_import_from_procs[found_procs[i]]++;
+
+            import_from_procs.assign( found_procs, found_procs+num_found );
+            sort( import_from_procs.begin(), import_from_procs.end() );
+            import_from_procs.erase( unique( import_from_procs.begin(), import_from_procs.end() ), import_from_procs.end() );
+
+            // if nothing found, nothing to free.
+            if(num_found > 0)
+                Zoltan_LB_Free_Part(&found_gids, &found_lids, &found_procs, &found_parts);
+
+            auto nb_reqs = std::count_if(data_to_migrate.cbegin(), data_to_migrate.cend(), [](auto buf){return !buf.empty();});
+            int cpt = 0;
+
+            // Send the data to neighbors
+            std::vector<MPI_Request> bottom_reqs(nb_reqs);
+            for (size_t PE = 0; PE < wsize; PE++) {
+                int send_size = data_to_migrate.at(PE).size();
+                if (send_size) {
+                    MPI_Isend(&data_to_migrate.at(PE).front(), send_size, datatype, PE, EXCHANGE_SEND_TAG_BOTTOM, bottom,
+                              &bottom_reqs[cpt]);
+                    cpt++;
+                }
+            }
+
+            // Import the data from neighbors
+            std::unordered_map<int, std::vector<A>> bottom_data_tmp;
+            for (int proc_id : import_from_procs) {
+                auto size = num_import_from_procs[proc_id];
+                bottom_data_tmp[proc_id].resize(size);
+                MPI_Recv(&bottom_data_tmp[proc_id].front(), size, datatype, proc_id, EXCHANGE_SEND_TAG_BOTTOM, bottom, MPI_STATUS_IGNORE);
+            }
+
+            /*********************************************************************************************************
+             * COMPUTE DESTINATION FOR TOP DATA ON TOP PROCS
+             *********************************************************************************************************/
+
+            std::fill(PEs_top.begin(), PEs_top.end(), -1);
+            std::fill(PEs_bottom.begin(), PEs_bottom.end(), -1);
+            std::for_each(data_to_migrate.begin(), data_to_migrate.end(), [](auto v){return v.clear();});
+            export_gids.clear();
+            export_procs.clear();
+            export_lids.clear();
+            num_known = 0;
             data_id = 0;
             const size_t top_data_size = top_data->size();
             if(in_top_partition) { //can't be executed by bottom-only PEs
                 while (data_id < top_data_size) {
                     int num_found_proc, num_found_part;
-                    auto pos_in_double = std::apply([](auto first, auto second) { return std::make_pair((double) first, (double) second); }, bottom_data->at(data_id).position);
+                    Vehicle& v = bottom_data->at(data_id);
+                    auto pos_in_double = std::apply([](auto first, auto second) { return std::make_pair((double) first, (double) second); }, v.position);
 
                     /**********************************************************************************
                      * Check if a work unit must be shared with someone within the bottom partitioning*
                      **********************************************************************************/
                     Zoltan_LB_Box_PP_Assign(zoltan_bottom,
-                                         pos_in_double.at(0) - cell_size,
-                                         pos_in_double.at(1) - cell_size,
+                                         pos_in_double.first - cell_size,
+                                         pos_in_double.second - cell_size,
                                          0.0,
-                                         pos_in_double.at(0) + cell_size,
-                                         pos_in_double.at(1) + cell_size,
+                                         pos_in_double.first + cell_size,
+                                         pos_in_double.second + cell_size,
                                          0.0,
                                          &PEs_bottom.front(), &num_found_proc, &parts.front(), &num_found_part);
+
+                    // Erase all the PEs that did not send a data that interact with the current vehicle
+                    PEs_bottom.erase(std::remove_if(PEs_bottom.begin(), PEs_bottom.end(), [&bottom_data_tmp, &v, &cell_size](auto pe){
+                        return std::none_of(bottom_data_tmp.at(pe).cbegin(),bottom_data_tmp.at(pe).cend(),[&v, &cell_size](const auto &e) {
+                            return distance2(e, v) <= cell_size;
+                        });
+                    }));
 
                     /**********************************************************************************
                      * Check if a work unit must be shared with someone within the top partitioning   *
                      **********************************************************************************/
                     Zoltan_LB_Box_PP_Assign(zoltan_top,
-                                         pos_in_double.at(0) - cell_size, pos_in_double.at(1) - cell_size, 0.0,
-                                         pos_in_double.at(0) + cell_size, pos_in_double.at(1) + cell_size, 0.0,
+                                         pos_in_double.first - cell_size, pos_in_double.second - cell_size, 0.0,
+                                         pos_in_double.first + cell_size, pos_in_double.second + cell_size, 0.0,
                                          &PEs_top.front(), &num_found_proc, &parts.front(), &num_found_part);
 
                     std::vector<int> PEs_distinct(PEs_bottom.size() + PEs_top.size());
@@ -240,58 +320,55 @@ namespace load_balancing {
                 }
             }
 
-            ZOLTAN_ID_PTR known_gids = (ZOLTAN_ID_PTR) &export_gids.front();
-            ZOLTAN_ID_PTR known_lids = (ZOLTAN_ID_PTR) &export_lids.front();
-            ZOLTAN_ID_PTR found_gids, found_lids;
-            int *found_procs, *found_parts;
-            std::vector<A> buffer;
-            std::vector<A> remote_data_gathered;
+            /*********************************************************************************************************
+             * EXCHANGE DATA TOP BOTTOM
+             *********************************************************************************************************/
+
+            known_gids = (ZOLTAN_ID_PTR) &export_gids.front();
+            known_lids = (ZOLTAN_ID_PTR) &export_lids.front();
 
             // Compute who has to send me something via Zoltan.
-            int ierr = Zoltan_Invert_Lists(zoltan_bottom, num_known, known_gids, known_lids, &export_procs[0], &export_procs[0],
-                                           &num_found, &found_gids, &found_lids, &found_procs, &found_parts);
-
-            std::vector<int> num_import_from_procs(wsize);
-            std::vector<int> import_from_procs;
+            Zoltan_Invert_Lists(zoltan_bottom, num_known, known_gids, known_lids, &export_procs[0], &export_procs[0],
+                                &num_found, &found_gids, &found_lids, &found_procs, &found_parts);
 
             // Compute how many elements I have to import from others, and from whom.
-            for (size_t i = 0; i < num_found; ++i) {
-
+            for (size_t i = 0; i < num_found; ++i)
                 num_import_from_procs[found_procs[i]]++;
-                if (std::find(import_from_procs.begin(), import_from_procs.end(), found_procs[i]) == import_from_procs.end())
-                    import_from_procs.push_back(found_procs[i]);
-            }
+
+            import_from_procs.assign( found_procs, found_procs+num_found );
+            sort( import_from_procs.begin(), import_from_procs.end() );
+            import_from_procs.erase( unique( import_from_procs.begin(), import_from_procs.end() ), import_from_procs.end() );
 
             // if nothing found, nothing to free.
             if(num_found > 0)
                 Zoltan_LB_Free_Part(&found_gids, &found_lids, &found_procs, &found_parts);
 
-            int nb_reqs = std::count_if(data_to_migrate.cbegin(), data_to_migrate.cend(), [](auto buf){return !buf.empty();});
-            int cpt = 0;
+            nb_reqs = std::count_if(data_to_migrate.cbegin(), data_to_migrate.cend(), [](auto buf){return !buf.empty();});
+            cpt = 0;
 
             // Send the data to neighbors
-            std::vector<MPI_Request> reqs(nb_reqs);
-            int nb_elements_sent = 0;
+            std::vector<MPI_Request> top_reqs(nb_reqs);
             for (size_t PE = 0; PE < wsize; PE++) {
                 int send_size = data_to_migrate.at(PE).size();
                 if (send_size) {
-                    nb_elements_sent += send_size;
-                    MPI_Isend(&data_to_migrate.at(PE).front(), send_size, datatype, PE, 400, bottom,
-                              &reqs[cpt]);
+                    MPI_Isend(&data_to_migrate.at(PE).front(), send_size, datatype, PE, EXCHANGE_SEND_TAG_TOP, bottom,
+                              &top_reqs[cpt]);
                     cpt++;
                 }
             }
+
             // Import the data from neighbors
-            int nb_elements_recv = 0;
             for (int proc_id : import_from_procs) {
-                size_t size = num_import_from_procs[proc_id];
-                nb_elements_recv += size;
+                auto size = num_import_from_procs[proc_id];
                 buffer.resize(size);
-                MPI_Recv(&buffer.front(), size, datatype, proc_id, 400, bottom, MPI_STATUS_IGNORE);
+                MPI_Recv(&buffer.front(), size, datatype, proc_id, EXCHANGE_SEND_TAG_TOP, bottom, MPI_STATUS_IGNORE);
                 std::move(buffer.begin(), buffer.end(), std::back_inserter(remote_data_gathered));
             }
 
-            MPI_Waitall(reqs.size(), &reqs.front(), MPI_STATUSES_IGNORE);
+            /// Wait on my requests to complete
+            MPI_Waitall(bottom_reqs.size(), &bottom_reqs.front(), MPI_STATUSES_IGNORE);
+            MPI_Waitall(top_reqs.size(),    &top_reqs.front(),    MPI_STATUSES_IGNORE);
+
             return remote_data_gathered;
         }
 
@@ -374,7 +451,6 @@ namespace load_balancing {
 
             auto known_gids = (ZOLTAN_ID_PTR) &export_gids_b.front();
             auto known_lids = (ZOLTAN_ID_PTR) &export_lids_b.front();
-
 
             ierr = Zoltan_Invert_Lists(zoltan_bottom, num_known_bottom, known_gids, known_lids, &export_procs_b[0], &export_procs_b[0],
                                        &num_found, &found_gids, &found_lids, &found_procs, &found_parts);
@@ -491,6 +567,22 @@ namespace load_balancing {
 				i++;
             }
 
+        }
+
+        template<class A>
+        void stop_model(std::vector<A> *bottom_data,
+                        std::vector<A> *top_data, // it is always empty for increasing load cpus
+                        Zoltan_Struct  *zoltan_bottom,
+                        Zoltan_Struct  *zoltan_top, // both are in the same comm
+                        MPI_Comm bottom,
+                        const std::vector<int>& increasing_cpus,
+                        const MPI_Datatype datatype) {
+            /** check if the state of the system meets the requirements for reseting **/
+
+            /** if it does, then partitioning on P processor **/
+
+            Zoltan_Destroy(&zoltan_top);
+            /** otherwise, do nothing**/
         }
 
     }

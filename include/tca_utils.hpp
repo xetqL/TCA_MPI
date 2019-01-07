@@ -28,6 +28,14 @@ inline bool exists(const Map &map, const key k1){
     return map.find(k1) != map.cend();
 }
 
+inline double distance2(const Vehicle& v1, const Vehicle& v2){
+    int x1,y1; std::tie(x1,y1) = v1.position;
+    int x2,y2; std::tie(x2,y2) = v2.position;
+    const double dx = x1-x2;
+    const double dy = y1-y2;
+    return dx*dx+dy*dy;
+}
+
 inline const Vehicle* get_ptr_vehicle(const std::unordered_map<long long, Vehicle>& vehicles_map,
                          const std::unordered_map<long long, Vehicle>& vehicles_map_remote,
                          long long xy) {
