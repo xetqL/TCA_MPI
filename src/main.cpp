@@ -120,9 +120,14 @@ int main(int argc, char **argv) {
     if(!rank)
         randomize_cars_position(SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix);
     auto vehicles = to_vec(vehicle_matrix);
+    std::cout << vehicles.size() << std::endl;
+    //std::for_each(vehicles.begin(), vehicles.end(), [](auto v){ std::cout << v << std::endl; });
 
     fprint(out, SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix);
-
+    if(!rank){
+        auto img = zzframe( SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix);
+        img.save("out0.jpg");
+    }
     auto zz = zoltan_create_wrapper(ENABLE_AUTOMATIC_MIGRATION, MPI_COMM_WORLD);
 
     //auto remote_data = zoltan_exchange_data(vehicles, zz, datatype.elements_datatype, bottom, recv, sent);
@@ -130,19 +135,20 @@ int main(int argc, char **argv) {
 
     zoltan_load_balance(&vehicles, zz, ENABLE_AUTOMATIC_MIGRATION);
 
-    std::normal_distribution<double> unif(0.05, 0.1);
-
-    std::default_random_engine re(rank);
-    double slope = unif(re);
+    double slope = rank == 0 ? 0.3 : 0.0;
     std::vector<int> incr_cpu;
+
     auto err = load_balancing::esoteric::get_communicator(slope, rank, bottom, &incr_cpu);
+
     if(err) std::cout << err << " no esoteric call" << std::endl;
 
     std::vector<Vehicle> top_vehicles;
-    auto zztop = load_balancing::esoteric::divide_data_into_top_bottom(&vehicles , &top_vehicles, incr_cpu, datatype.elements_datatype, bottom);
 
-    auto remote_vehicle = load_balancing::esoteric::exchange(&vehicles, &top_vehicles, zz, zztop, bottom, incr_cpu, datatype.elements_datatype, 1.1);
-    std::for_each(remote_vehicle.cbegin(), remote_vehicle.cend(), [](auto v){ std::cout << v << std::endl; });
+    auto zztop = load_balancing::esoteric::divide_data_into_top_bottom(&vehicles , &top_vehicles, incr_cpu, datatype.elements_datatype, bottom);
+    //std::for_each(top_vehicles.cbegin(), top_vehicles.cend(), [&rank](auto v){ std::cout << rank << " has " << v << std::endl; });
+    auto remote_vehicle = load_balancing::esoteric::exchange(&vehicles, &top_vehicles, zz, zztop, bottom, incr_cpu, datatype.elements_datatype, 1.0);
+    //std::for_each(remote_vehicle.cbegin(), remote_vehicle.cend(), [&rank](auto v){ std::cout << rank << " temporary has " << v << std::endl; });
+    std::cout << rank << " " << remote_vehicle.size() << std::endl;
     int step = 0;
 
     while (false) {

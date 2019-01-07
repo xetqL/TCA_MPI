@@ -74,7 +74,7 @@ namespace load_balancing {
 
 
         template<class A>
-        Zoltan_Struct* divide_data_into_top_bottom(std::vector<A> *data_bottom, // becomes bottom
+        Zoltan_Struct* divide_data_into_top_bottom(std::vector<A>   *data_bottom, // becomes bottom
                                                     std::vector<A>  *data_top,
                                                     const std::vector<int>& increasing_cpus,
                                                     const MPI_Datatype datatype,
@@ -86,9 +86,12 @@ namespace load_balancing {
             int bottom_size; MPI_Comm_size(bottom, &bottom_size);
 
             const bool in_top_partition = std::find(increasing_cpus.cbegin(), increasing_cpus.cend(), bottom_rank) == increasing_cpus.cend();
-            if(!in_top_partition) top_mesh_data = *data_bottom;
+            if(!in_top_partition)
+                top_mesh_data = *data_bottom;
+
             zz_top = zoltan_create_wrapper(ENABLE_AUTOMATIC_MIGRATION, bottom, bottom_size - increasing_cpus.size(), in_top_partition ? 1 : 0);
             tca::zoltan_load_balance(&top_mesh_data, zz_top, ENABLE_AUTOMATIC_MIGRATION);
+
             if(in_top_partition) {
                 std::move(top_mesh_data.begin(), top_mesh_data.end(), std::back_inserter(*data_top));
             } else data_bottom->clear();
@@ -148,7 +151,6 @@ namespace load_balancing {
             std::vector<int> num_import_from_procs(wsize);
             std::vector<int> import_from_procs;
 
-
             const bool in_top_partition = std::find(increasing_cpus.cbegin(), increasing_cpus.cend(), my_bottom_rank) == increasing_cpus.cend();
             const int EXCHANGE_SEND_TAG_TOP=903, EXCHANGE_SEND_TAG_BOTTOM=904;
 
@@ -168,8 +170,9 @@ namespace load_balancing {
              *********************************************************************************************************/
 
             while (data_id < bot_data_size) {
-
-                auto pos_in_double = std::apply([](auto first, auto second) { return std::make_pair((double) first, (double) second); }, bottom_data->at(data_id).position);
+                Vehicle& v = bottom_data->at(data_id);
+                //std::cout << my_bottom_rank << " " << v << std::endl;
+                auto pos_in_double = std::apply([](auto first, auto second) { return std::make_pair((double) first, (double) second); }, v.position);
 
                 int num_found_proc, num_found_part;
 
@@ -189,9 +192,8 @@ namespace load_balancing {
                                      pos_in_double.first + cell_size, pos_in_double.second + cell_size, 0.0,
                                      &PEs_top.front(), &num_found_proc, &parts.front(), &num_found_part);
 
-                std::vector<int> PEs_distinct(PEs_bottom.size() + PEs_top.size());
-                auto it = std::set_union(PEs_bottom.begin(), PEs_bottom.end(), PEs_top.begin(), PEs_top.end(), PEs_distinct.begin());
-                PEs_distinct.resize(it-PEs_distinct.begin());
+                std::set<int> PEs_distinct(PEs_bottom.begin(), PEs_bottom.end());
+                PEs_distinct.insert(PEs_top.begin(), PEs_top.end());
 
                 /**********************************************************************************
                  * Mark data as export for every detected PE                                      *
@@ -223,9 +225,8 @@ namespace load_balancing {
             for (size_t i = 0; i < num_found; ++i)
                 num_import_from_procs[found_procs[i]]++;
 
-            import_from_procs.assign( found_procs, found_procs+num_found );
-            sort( import_from_procs.begin(), import_from_procs.end() );
-            import_from_procs.erase( unique( import_from_procs.begin(), import_from_procs.end() ), import_from_procs.end() );
+            std::set<int> tmp_set(found_procs, found_procs+num_found);
+            import_from_procs.assign( tmp_set.begin(), tmp_set.end() );
 
             // if nothing found, nothing to free.
             if(num_found > 0)
@@ -259,7 +260,8 @@ namespace load_balancing {
 
             std::fill(PEs_top.begin(), PEs_top.end(), -1);
             std::fill(PEs_bottom.begin(), PEs_bottom.end(), -1);
-            std::for_each(data_to_migrate.begin(), data_to_migrate.end(), [](auto v){return v.clear();});
+            std::fill(data_to_migrate.begin(), data_to_migrate.end(), std::vector<Vehicle>() );
+            std::fill(num_import_from_procs.begin(), num_import_from_procs.end(), 0);
             export_gids.clear();
             export_procs.clear();
             export_lids.clear();
@@ -269,7 +271,7 @@ namespace load_balancing {
             if(in_top_partition) { //can't be executed by bottom-only PEs
                 while (data_id < top_data_size) {
                     int num_found_proc, num_found_part;
-                    Vehicle& v = bottom_data->at(data_id);
+                    Vehicle& v = top_data->at(data_id); //!\\ TOP DATA HERE
                     auto pos_in_double = std::apply([](auto first, auto second) { return std::make_pair((double) first, (double) second); }, v.position);
 
                     /**********************************************************************************
@@ -285,11 +287,12 @@ namespace load_balancing {
                                          &PEs_bottom.front(), &num_found_proc, &parts.front(), &num_found_part);
 
                     // Erase all the PEs that did not send a data that interact with the current vehicle
-                    PEs_bottom.erase(std::remove_if(PEs_bottom.begin(), PEs_bottom.end(), [&bottom_data_tmp, &v, &cell_size](auto pe){
-                        return std::none_of(bottom_data_tmp.at(pe).cbegin(),bottom_data_tmp.at(pe).cend(),[&v, &cell_size](const auto &e) {
+                    std::vector<int> PEs_bottom2;
+                    std::copy_if(PEs_bottom.begin(), PEs_bottom.end(), std::back_inserter(PEs_bottom2), [&bottom_data_tmp, &v, &cell_size](auto pe){
+                        return !exists(bottom_data_tmp, pe) || std::none_of(bottom_data_tmp.at(pe).cbegin(),bottom_data_tmp.at(pe).cend(),[&v, &cell_size](const auto &e) {
                             return distance2(e, v) <= cell_size;
                         });
-                    }));
+                    });
 
                     /**********************************************************************************
                      * Check if a work unit must be shared with someone within the top partitioning   *
@@ -299,10 +302,8 @@ namespace load_balancing {
                                          pos_in_double.first + cell_size, pos_in_double.second + cell_size, 0.0,
                                          &PEs_top.front(), &num_found_proc, &parts.front(), &num_found_part);
 
-                    std::vector<int> PEs_distinct(PEs_bottom.size() + PEs_top.size());
-                    auto it = std::set_union(PEs_bottom.begin(), PEs_bottom.end(), PEs_top.begin(), PEs_top.end(),
-                                             PEs_distinct.begin());
-                    PEs_distinct.resize(it - PEs_distinct.begin());
+                    std::set<int> PEs_distinct(PEs_bottom.begin(), PEs_bottom.end());
+                    PEs_distinct.insert(PEs_top.begin(), PEs_top.end());
 
                     /**********************************************************************************
                      * Mark data as export for every detected PE                                      *
@@ -335,9 +336,9 @@ namespace load_balancing {
             for (size_t i = 0; i < num_found; ++i)
                 num_import_from_procs[found_procs[i]]++;
 
-            import_from_procs.assign( found_procs, found_procs+num_found );
-            sort( import_from_procs.begin(), import_from_procs.end() );
-            import_from_procs.erase( unique( import_from_procs.begin(), import_from_procs.end() ), import_from_procs.end() );
+            std::set<int> tmp_set2(found_procs, found_procs+num_found);
+            import_from_procs.assign( tmp_set2.begin(), tmp_set2.end() );
+
 
             // if nothing found, nothing to free.
             if(num_found > 0)
@@ -363,6 +364,10 @@ namespace load_balancing {
                 buffer.resize(size);
                 MPI_Recv(&buffer.front(), size, datatype, proc_id, EXCHANGE_SEND_TAG_TOP, bottom, MPI_STATUS_IGNORE);
                 std::move(buffer.begin(), buffer.end(), std::back_inserter(remote_data_gathered));
+            }
+
+            for(auto data : bottom_data_tmp) {
+                std::move(data.second.begin(), data.second.end(), std::back_inserter(remote_data_gathered));
             }
 
             /// Wait on my requests to complete
