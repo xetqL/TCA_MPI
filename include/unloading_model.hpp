@@ -73,7 +73,7 @@ namespace load_balancing {
 
 
         template<class A>
-        Zoltan_Struct* divide_data_into_top_bottom2(std::vector<A> *data_bottom, // becomes bottom
+        Zoltan_Struct* divide_data_into_top_bottom(std::vector<A> *data_bottom, // becomes bottom
                                                     std::vector<A>  *data_top,
                                                     const std::vector<int>& increasing_cpus,
                                                     const MPI_Datatype datatype,

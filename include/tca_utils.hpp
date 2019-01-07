@@ -176,7 +176,7 @@ std::unordered_map<long long, Vehicle> to_map(int msx, int msy, std::vector<Vehi
     return vehicle_matrix;
 }
 
-std::unordered_map<long long, CA_Cell> generate_random_manhattan (const size_t SIZE_X, const size_t SIZE_Y) {
+std::tuple<std::unordered_map<long long, CA_Cell>, std::vector<int>, std::vector<int>>  generate_random_manhattan (const size_t SIZE_X, const size_t SIZE_Y) {
     const long long MANHATTAN_LENGTH = SIZE_X * SIZE_Y;
     std::unordered_map<long long, CA_Cell> manhattan;
     manhattan.reserve(MANHATTAN_LENGTH);
@@ -218,16 +218,16 @@ std::unordered_map<long long, CA_Cell> generate_random_manhattan (const size_t S
                 manhattan[cell_idx+SIZE_X].direction = GoingRight;
         }
     }
-    return manhattan;
+    return std::make_tuple(manhattan, roads_position_x, roads_position_y);
 }
 
-void create_random_left_sources(int n, const size_t SIZE_X, const size_t SIZE_Y, std::unordered_map<long long, CA_Cell> *ca_matrix) {
-    const long long MANHATTAN_LENGTH = SIZE_X * SIZE_Y;
-    for(long long i = 0; i < MANHATTAN_LENGTH; i += SIZE_X) {
-        if(ca_matrix->at(i).direction != NoDirection && rand() % 2) {
-            ca_matrix->at(i).source = true;
-            n--; if(n==0) break;
-        }
+void create_random_left_sources(int n, const size_t SIZE_X, const size_t SIZE_Y, std::vector<int> left, std::unordered_map<long long, CA_Cell> *ca_matrix) {
+    const int X = 0;
+    std::random_shuffle(left.begin(), left.end());
+    for(; n > 0; n--) {
+        const int Y = left[n];
+        const long long xy = position_to_cell(SIZE_X, SIZE_Y, X, Y);
+        ca_matrix->at(xy).source = true;
     }
 }
 
