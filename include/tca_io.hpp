@@ -99,11 +99,6 @@ uint8_t* to_frame(size_t sx, size_t sy, const std::unordered_map<long long, CA_C
             ret[xy+2] = 0;
         }
     }
-    /*for (size_t xy = 0; xy < sz; xy++) {
-        if (exists(vehicle_matrix, xy))
-            ret[xy] = 0;
-        else ret[xy] = 0;
-    }*/
     return ret;
 }
 
