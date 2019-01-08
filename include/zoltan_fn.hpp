@@ -139,7 +139,7 @@ Zoltan_Struct* zoltan_create_wrapper(bool automatic_migration, MPI_Comm comm, in
     Zoltan_Set_Param(zz, "NUM_GID_ENTRIES", "1");
 
     if(num_global_part >= 1) Zoltan_Set_Param(zz, "NUM_GLOBAL_PARTS", ngp.c_str());
-    if(part_on_me >= 1) Zoltan_Set_Param(zz, "NUM_LOCAL_PARTS",  pom.c_str());
+    if(part_on_me >= 1)      Zoltan_Set_Param(zz, "NUM_LOCAL_PARTS",  pom.c_str());
 
     Zoltan_Set_Param(zz, "NUM_LID_ENTRIES", "1");
     Zoltan_Set_Param(zz, "OBJ_WEIGHT_DIM", "0");
@@ -224,6 +224,27 @@ inline T dto(double v) {
     return ret;
 }
 
+inline std::array<std::pair<uint64_t, uint64_t>, 2> borders_to_domain(const uint64_t msx, const uint64_t msy,
+                                   const uint64_t xmin,
+                                   const uint64_t ymin,
+                                   const uint64_t zmin,
+                                   const uint64_t xmax,
+                                   const uint64_t ymax,
+                                   const uint64_t zmax){
+    std::array<std::pair<uint64_t, uint64_t>, 2> res;
+/*  p-Min
+    -----> o------o
+          /      /|
+         o------o |
+         |      | o
+         |      |/   p-Max
+         o------o <------- */
+
+    res.at(0).first = xmin > 0 ? xmin : 0; res.at(0).second = xmax < msx ? xmax : msx;
+    res.at(1).first = ymin > 0 ? ymin : 0; res.at(1).second = ymax < msy ? ymax : msy;
+
+    return res;
+}
 
 
 #endif //NBMPI_ZOLTAN_FN_HPP

@@ -10,14 +10,28 @@
 #include <algorithm>
 
 template<class key, class val, class retval, class RetFunc>
-retval get_or_default(const std::unordered_map<key, val> map, const key k1, const retval def,  RetFunc f){
+inline retval get_or_default(const std::unordered_map<key, val>& map, const key& k1, const retval& def,  RetFunc f){
     if(map.find(k1) == map.cend())
         return def;
     return f(map.at(k1));
 }
 
 template<class key, class val, class retval>
-retval get_or_default(const std::unordered_map<key, val> map, const key k1, const retval def) {
+inline retval get_or_default(const std::unordered_map<key, val>& map, const key& k1, const retval& def) {
+    if(map.find(k1) == map.cend())
+        return def;
+    return map.at(k1);
+}
+/*
+template<class key, class val, class retval, class RetFunc>
+inline retval get_or_default(const std::unordered_map<key, val> map, const key k1, const retval def,  RetFunc f){
+    if(map.find(k1) == map.cend())
+        return def;
+    return f(map.at(k1));
+}
+*/
+template<class key, class val, class retval>
+inline retval get_or_default(const std::unordered_map<key, val> map, const key k1, const retval def) {
     if(map.find(k1) == map.cend())
         return def;
     return map.at(k1);
@@ -50,7 +64,7 @@ inline const Vehicle* get_ptr_vehicle(const std::unordered_map<long long, Vehicl
 }
 
 template<class Map, class key>
-int exists(const Map &map1, const Map &map2, const key k1){
+inline int exists(const Map &map1, const Map &map2, const key k1){
     if(map1.find(k1) != map1.cend())
         return 1;
     if(map2.find(k1) != map2.cend())
@@ -178,13 +192,12 @@ std::unordered_map<long long, Vehicle> to_map(int msx, int msy, std::vector<Vehi
     long long xy;
     for(size_t i = 0; i < vsize; i++){
         xy = position_to_cell(msx, msy, vec[i].position);
-        //std::cout << vec[i] << std::endl;
         vehicle_matrix[xy] = std::move(vec[i]);
     }
     return vehicle_matrix;
 }
 
-std::unordered_map<long long, CA_Cell> generate_random_manhattan (const size_t SIZE_X, const size_t SIZE_Y) {
+std::tuple<std::unordered_map<long long, CA_Cell>, std::vector<int>, std::vector<int>>  generate_random_manhattan (const size_t SIZE_X, const size_t SIZE_Y) {
     const long long MANHATTAN_LENGTH = SIZE_X * SIZE_Y;
     std::unordered_map<long long, CA_Cell> manhattan;
     manhattan.reserve(MANHATTAN_LENGTH);
@@ -195,7 +208,7 @@ std::unordered_map<long long, CA_Cell> generate_random_manhattan (const size_t S
     }
 
     std::vector<int> roads_position_y;
-    for(int last = (rand() % 7) + 1; (last + 2) < SIZE_Y; last += (rand() % 7) + 3){
+    for(int last = (rand() % 7) + 1; (last + 2) < SIZE_Y; last += (rand() % 7) + 3) {
         roads_position_y.push_back(last);
     }
 
@@ -226,16 +239,16 @@ std::unordered_map<long long, CA_Cell> generate_random_manhattan (const size_t S
                 manhattan[cell_idx+SIZE_X].direction = GoingRight;
         }
     }
-    return manhattan;
+    return std::make_tuple(manhattan, roads_position_x, roads_position_y);
 }
 
-void create_random_left_sources(int n, const size_t SIZE_X, const size_t SIZE_Y, std::unordered_map<long long, CA_Cell> *ca_matrix) {
-    const long long MANHATTAN_LENGTH = SIZE_X * SIZE_Y;
-    for(long long i = 0; i < MANHATTAN_LENGTH; i += SIZE_X) {
-        if(ca_matrix->at(i).direction != NoDirection && rand() % 2) {
-            ca_matrix->at(i).source = true;
-            n--; if(n==0) break;
-        }
+void create_random_left_sources(int n, const size_t SIZE_X, const size_t SIZE_Y, std::vector<int> left, std::unordered_map<long long, CA_Cell> *ca_matrix) {
+    const int X = 0;
+    std::random_shuffle(left.begin(), left.end());
+    for(; n > 0; n--) {
+        const int Y = left[n-1]+1;
+        const long long xy = position_to_cell(SIZE_X, SIZE_Y, X, Y);
+        ca_matrix->at(xy).source = true;
     }
 }
 

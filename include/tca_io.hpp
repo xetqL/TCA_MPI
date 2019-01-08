@@ -120,9 +120,9 @@ zz::Image zzframe(const size_t sx, const size_t sy, const std::unordered_map<lon
                 ret(y, x, 2) = 0;
             } else {
                 if(ca_matrix.at(xy).direction != NoDirection){
-                    ret(y, x, 0) = 128;
-                    ret(y, x, 1) = 128;
-                    ret(y, x, 2) = 128;
+                    ret(y, x, 0) = 255;
+                    ret(y, x, 1) = 255;
+                    ret(y, x, 2) = 255;
                 } else {
                     ret(y, x, 0) = 255;
                     ret(y, x, 1) = 255;

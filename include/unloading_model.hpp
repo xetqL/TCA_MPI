@@ -65,6 +65,8 @@ namespace load_balancing {
                 }
             }
 
+            std::sort(increasing_cpus->begin(), increasing_cpus->end());
+
             if(err) {
                 increasing_cpus->clear();
             }
@@ -81,9 +83,14 @@ namespace load_balancing {
                                                     MPI_Comm bottom) {
             const int TAG = 900;
             std::vector<A> top_mesh_data;
+
             Zoltan_Struct* zz_top = nullptr;
+
             int bottom_rank; MPI_Comm_rank(bottom, &bottom_rank);
+
             int bottom_size; MPI_Comm_size(bottom, &bottom_size);
+
+            if (bottom_size/2 <= increasing_cpus.size()) return zz_top;
 
             const bool in_top_partition = std::find(increasing_cpus.cbegin(), increasing_cpus.cend(), bottom_rank) == increasing_cpus.cend();
             if(!in_top_partition)
@@ -95,8 +102,10 @@ namespace load_balancing {
             if(in_top_partition) {
                 std::move(top_mesh_data.begin(), top_mesh_data.end(), std::back_inserter(*data_top));
             } else data_bottom->clear();
+
             return zz_top;
         }
+
         namespace {
 
         template<class A>
@@ -105,6 +114,22 @@ namespace load_balancing {
             A el = *(data->end() - 1);
             data->pop_back();
             return el;
+        }
+
+        template <class InputIterator1, class InputIterator2>
+        bool contains_at_least_one_of(InputIterator1 first1, InputIterator1 last1,
+                                      InputIterator2 first2, InputIterator2 last2) {
+
+            while(first1 < last1 && first2 < last2){
+                if(*first1 == *first2)
+                    return true;
+                else if (*first1 < *first2) {
+                    first1++;
+                } else if(*first1 > *first2){
+                    first2++;
+                }
+            }
+            return false;
         }
 
         }
@@ -134,13 +159,25 @@ namespace load_balancing {
 
         template<class A>
         const std::vector<A> exchange(
+                  Zoltan_Struct   *zoltan_bottom,
+                  Zoltan_Struct   *zoltan_top,
                   std::vector<A>  *bottom_data,
                   std::vector<A>  *top_data, // it is always empty for increasing load cpus
-                  Zoltan_Struct* zoltan_bottom, Zoltan_Struct* zoltan_top,
-                  MPI_Comm bottom,
+                  int* nb_elements_recv,
+                  int* nb_elements_sent,
                   const std::vector<int>& increasing_cpus,
                   const MPI_Datatype datatype,
+                  MPI_Comm bottom,
                   const double cell_size = 1.0) {
+
+
+            if(zoltan_top == nullptr) {
+                return zoltan_exchange_data(zoltan_bottom, bottom_data, nb_elements_recv, nb_elements_sent, datatype, bottom, cell_size);
+            }
+
+            *nb_elements_recv = 0;
+            *nb_elements_sent = 0;
+
             int my_bottom_rank; MPI_Comm_rank(bottom, &my_bottom_rank);
             int wsize; MPI_Comm_size(bottom, &wsize);
 
@@ -184,21 +221,26 @@ namespace load_balancing {
                                      pos_in_double.first + cell_size, pos_in_double.second + cell_size, 0.0,
                                      &PEs_bottom.front(), &num_found_proc, &parts.front(), &num_found_part);
 
-                /**********************************************************************************
-                 * Check if a work unit must be shared with someone within the top partitioning   *
-                 **********************************************************************************/
-                Zoltan_LB_Box_PP_Assign(zoltan_top,
-                                     pos_in_double.first - cell_size, pos_in_double.second - cell_size, 0.0,
-                                     pos_in_double.first + cell_size, pos_in_double.second + cell_size, 0.0,
-                                     &PEs_top.front(), &num_found_proc, &parts.front(), &num_found_part);
+                bool bottom_contain_incr_cpu = contains_at_least_one_of(PEs_bottom.begin(), PEs_bottom.end(), increasing_cpus.begin(), increasing_cpus.end());
 
                 std::set<int> PEs_distinct(PEs_bottom.begin(), PEs_bottom.end());
-                PEs_distinct.insert(PEs_top.begin(), PEs_top.end());
+
+                if(bottom_contain_incr_cpu) {
+                    /**********************************************************************************
+                     * Check if a work unit must be shared with someone within the top partitioning   *
+                     **********************************************************************************/
+                    Zoltan_LB_Box_PP_Assign(zoltan_top,
+                                            pos_in_double.first - cell_size, pos_in_double.second - cell_size, 0.0,
+                                            pos_in_double.first + cell_size, pos_in_double.second + cell_size, 0.0,
+                                            &PEs_top.front(), &num_found_proc, &parts.front(), &num_found_part);
+                    PEs_distinct.insert(PEs_top.begin(), PEs_top.end());
+                }
 
                 /**********************************************************************************
                  * Mark data as export for every detected PE                                      *
                  **********************************************************************************/
                 for(int PE : PEs_distinct) {
+
                     if (PE >= 0 && PE != my_bottom_rank) {
                         export_gids.push_back(bottom_data->at(data_id).gid);
                         export_lids.push_back(bottom_data->at(data_id).lid);
@@ -207,6 +249,9 @@ namespace load_balancing {
                         num_known++;
                     }
                 }
+
+                std::fill(PEs_top.begin(), PEs_top.end(), -1);
+                std::fill(PEs_bottom.begin(), PEs_bottom.end(), -1);
                 data_id++; //if the element must stay with me then check the next one
             }
 
@@ -294,16 +339,21 @@ namespace load_balancing {
                         });
                     });
 
-                    /**********************************************************************************
-                     * Check if a work unit must be shared with someone within the top partitioning   *
-                     **********************************************************************************/
-                    Zoltan_LB_Box_PP_Assign(zoltan_top,
-                                         pos_in_double.first - cell_size, pos_in_double.second - cell_size, 0.0,
-                                         pos_in_double.first + cell_size, pos_in_double.second + cell_size, 0.0,
-                                         &PEs_top.front(), &num_found_proc, &parts.front(), &num_found_part);
+                    bool bottom_contain_incr_cpu = contains_at_least_one_of(PEs_bottom.begin(), PEs_bottom.end(), increasing_cpus.begin(), increasing_cpus.end());
 
                     std::set<int> PEs_distinct(PEs_bottom.begin(), PEs_bottom.end());
-                    PEs_distinct.insert(PEs_top.begin(), PEs_top.end());
+
+                    if(bottom_contain_incr_cpu){
+                        /**********************************************************************************
+                         * Check if a work unit must be shared with someone within the top partitioning   *
+                         **********************************************************************************/
+                        Zoltan_LB_Box_PP_Assign(zoltan_top,
+                                                pos_in_double.first - cell_size, pos_in_double.second - cell_size, 0.0,
+                                                pos_in_double.first + cell_size, pos_in_double.second + cell_size, 0.0,
+                                                &PEs_top.front(), &num_found_proc, &parts.front(), &num_found_part);
+                        PEs_distinct.insert(PEs_top.begin(), PEs_top.end());
+                    }
+
 
                     /**********************************************************************************
                      * Mark data as export for every detected PE                                      *
@@ -317,6 +367,8 @@ namespace load_balancing {
                             num_known++;
                         }
                     }
+                    std::fill(PEs_top.begin(), PEs_top.end(), -1);
+                    std::fill(PEs_bottom.begin(), PEs_bottom.end(), -1);
                     data_id++; //if the element must stay with me then check the next one
                 }
             }
@@ -378,12 +430,18 @@ namespace load_balancing {
         }
 
         template<class A>
-        void migrate(std::vector<A>  *bottom_data,
+        void migrate(Zoltan_Struct *zoltan_bottom,
+                     Zoltan_Struct *zoltan_top, // both in the same comm
+                     std::vector<A>  *bottom_data,
                      std::vector<A>  *top_data, // it is always empty for increasing load cpus
-                     Zoltan_Struct* zoltan_bottom, Zoltan_Struct* zoltan_top, // both in the same comm
-                     MPI_Comm bottom,
                      const std::vector<int>& increasing_cpus,
-                     const MPI_Datatype datatype) {
+                     const MPI_Datatype datatype,
+                     MPI_Comm bottom) {
+
+            if (zoltan_top == nullptr) {
+                zoltan_migrate_particles(zoltan_bottom, bottom_data, datatype, bottom);
+                return;
+            }
 
             int wsize; MPI_Comm_size(bottom, &wsize);
             int my_bottom_rank; MPI_Comm_rank(bottom, &my_bottom_rank);
@@ -418,7 +476,7 @@ namespace load_balancing {
                 data_id = 0;
                 // Computing destination for top particles
                 while (data_id < top_data->size()) {
-                    std::vector<double> pos_in_double = {(double) bottom_data->at(data_id).position.first,(double) bottom_data->at(data_id).position.second};
+                    std::vector<double> pos_in_double = {(double) top_data->at(data_id).position.first,(double) top_data->at(data_id).position.second};
                     Zoltan_LB_Point_PP_Assign(zoltan_bottom, &pos_in_double.front(), &PE, &part);
                     if (PE != my_bottom_rank) {
                         if (std::find(increasing_cpus.cbegin(), increasing_cpus.cend(), PE) != increasing_cpus.cend()) {

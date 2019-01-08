@@ -17,6 +17,7 @@ struct Vehicle {
     int rotary_exit_flag;
     std::pair<int, int> position;
     float speed;
+    //int waiting_time = 0;
 
     Vehicle(): gid(-1), lid(-1), rotary_exit_flag(0), position(std::make_pair(-1, -1)),  speed(0) {}
     Vehicle(int gid, int lid, int x, int y, float speed) : gid(gid), lid(lid), rotary_exit_flag(rand() % 100 < PROBABILITY_EXIT), position(std::make_pair(x, y)),  speed(speed) {}
@@ -32,6 +33,11 @@ struct Vehicle {
         os << "gid: " << vehicle.gid << " lid: " << vehicle.lid << " rotary_exit_flag: " << vehicle.rotary_exit_flag
            << " position: (" << x << ","<< y <<") speed: " << vehicle.speed;
         return os;
+    }
+
+    std::string as_readable_string() {
+        int waiting_time = 0;
+        return std::to_string(position.first) + ";"+std::to_string(position.second)+";"+std::to_string(waiting_time);
     }
 
     char as_char() const {

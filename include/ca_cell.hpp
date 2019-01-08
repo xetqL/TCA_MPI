@@ -34,7 +34,7 @@ struct CA_Cell {
     }
 
     bool has_to_generate(int step) const {
-        if(step % 10){
+        if( !(step % 10) ) {
             PROBABILITY_GENERATE = rand() % 100;
         }
         return source && rand() % 100 <= PROBABILITY_GENERATE;

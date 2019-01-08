@@ -25,11 +25,11 @@ struct CommunicationDatatype {
 };
 
 template<class A>
-inline void gather_elements_on(const std::vector<A> &local_el,
+inline std::vector<A> gather_elements_on(const std::vector<A> &local_el,
                                const int dest_rank,
-                               std::vector<A> &dest_el,
                                const MPI_Datatype &sendtype,
                                const MPI_Comm &comm) {
+    std::vector<A> dest_el;
     int nlocal = local_el.size();
     int my_rank; MPI_Comm_rank(comm, &my_rank);
     int world_size; MPI_Comm_size(comm, &world_size);
@@ -40,16 +40,41 @@ inline void gather_elements_on(const std::vector<A> &local_el,
     if (my_rank == dest_rank) dest_el.resize(nb_elements);
     MPI_Gatherv(&local_el.front(), nlocal, sendtype,
                 &dest_el.front(), &counts.front(), &displs.front(), sendtype, dest_rank, comm);
+
+    return dest_el;
 }
 
 template<class A>
-const std::vector<A> zoltan_exchange_data(std::vector<A> &data,
-                                          Zoltan_Struct *load_balancer,
+inline void gather_elements_on(const std::vector<A> &local_el,
+                                         const int dest_rank,
+                                         std::vector<A>* _dest_el,
+                                         const MPI_Datatype &sendtype,
+                                         const MPI_Comm &comm) {
+    std::vector<A>& dest_el = *(_dest_el), buffer;
+    int nlocal = local_el.size();
+    int my_rank; MPI_Comm_rank(comm, &my_rank);
+    int world_size; MPI_Comm_size(comm, &world_size);
+    std::vector<int> counts(world_size, 0), displs(world_size, 0);
+    MPI_Gather(&nlocal, 1, MPI_INT, &counts.front(), 1, MPI_INT, dest_rank, comm);
+    int nb_elements = std::accumulate(counts.begin(), counts.end(), 0);
+    for (int cpt = 0; cpt < world_size; ++cpt) displs[cpt] = cpt == 0 ? 0 : displs[cpt - 1] + counts[cpt - 1];
+    if (my_rank == dest_rank) buffer.resize(nb_elements);
+    MPI_Gatherv(&local_el.front(), nlocal, sendtype,
+                &buffer.front(), &counts.front(), &displs.front(), sendtype, dest_rank, comm);
+    std::move(buffer.begin(), buffer.end(), std::back_inserter(dest_el));
+}
+
+template<class A>
+const std::vector<A> zoltan_exchange_data(Zoltan_Struct *load_balancer,
+                                          std::vector<A> *_data,
+                                          int* nb_elements_recv,
+                                          int* nb_elements_sent,
                                           MPI_Datatype datatype,
-                                          const MPI_Comm LB_COMM,
-                                          int &nb_elements_recv,
-                                          int &nb_elements_sent,
+                                          MPI_Comm LB_COMM,
                                           double cell_size = 0.000625) {
+    *nb_elements_recv=0;
+    *nb_elements_sent=0;
+    std::vector<A>& data = *(_data);
     int wsize;
     MPI_Comm_size(LB_COMM, &wsize);
     int caller_rank;
@@ -129,18 +154,18 @@ const std::vector<A> zoltan_exchange_data(std::vector<A> &data,
 
 // Send the data to neighbors
     std::vector<MPI_Request> reqs(nb_reqs);
-    nb_elements_sent = 0;
+    *nb_elements_sent = 0;
     for (size_t PE = 0; PE < wsize; PE++) {
         int send_size = data_to_migrate.at(PE).size();
         if (send_size) {
-            nb_elements_sent += send_size;
+            *nb_elements_sent += send_size;
             MPI_Isend(&data_to_migrate.at(PE).front(), send_size, datatype, PE, 400, LB_COMM,
                       &reqs[cpt]);
             cpt++;
         }
     }
 // Import the data from neighbors
-    nb_elements_recv = 0;
+    *nb_elements_recv = 0;
     for (int proc_id : import_from_procs) {
         size_t size = num_import_from_procs[proc_id];
         nb_elements_recv += size;
@@ -154,10 +179,11 @@ const std::vector<A> zoltan_exchange_data(std::vector<A> &data,
 }
 
 template<class A>
-void zoltan_migrate_particles(std::vector<A> &data,
-                              Zoltan_Struct *load_balancer,
+void zoltan_migrate_particles(Zoltan_Struct *load_balancer,
+                              std::vector<A> *_data,
                               const MPI_Datatype datatype,
                               const MPI_Comm LB_COMM) {
+    std::vector<A>& data = *(_data);
     int wsize;
     MPI_Comm_size(LB_COMM, &wsize);
     int caller_rank;

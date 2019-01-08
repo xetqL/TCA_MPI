@@ -39,13 +39,13 @@ std::pair<std::pair<int, int>, std::pair<int, int>> get_rotary_neighbors(int x, 
 }
 
 std::pair<std::pair<int, int>, std::pair<int, int>> get_rotary_neighbors(int msx, int msy, int x, int y,
-                                                                         const std::unordered_map<long long, CA_Cell> &ca_matrix) {
+                                                                         const std::unordered_map<long long, CA_Cell>& ca_matrix) {
     long long xy;
-
-    xy = position_to_cell(msx, msy, x, y - 1 == -1 ? msy : y - 1); auto north_cell = get_or_default(ca_matrix, xy, CA_Cell::get_fake_cell());
-    xy = position_to_cell(msx, msy, x, y + 1 == msy ? -1 : y + 1); auto south_cell = get_or_default(ca_matrix, xy, CA_Cell::get_fake_cell());
-    xy = position_to_cell(msx, msy, x - 1 == -1 ? msx : x - 1, y); auto west_cell  = get_or_default(ca_matrix, xy, CA_Cell::get_fake_cell());
-    xy = position_to_cell(msx, msy, x + 1 == msx ? -1 : x + 1, y); auto east_cell  = get_or_default(ca_matrix, xy, CA_Cell::get_fake_cell());
+    const long long max_xy = msx*msy;
+    xy = position_to_cell(msx, msy, x, y - 1 == -1 ? msy : y - 1); auto north_cell = xy >= max_xy || xy < 0? CA_Cell::get_fake_cell() : ca_matrix.at(xy);
+    xy = position_to_cell(msx, msy, x, y + 1 == msy ? -1 : y + 1); auto south_cell = xy >= max_xy || xy < 0? CA_Cell::get_fake_cell() : ca_matrix.at(xy); //get_or_default(ca_matrix, xy, CA_Cell::get_fake_cell());
+    xy = position_to_cell(msx, msy, x - 1 == -1 ? msx : x - 1, y); auto west_cell  = xy >= max_xy || xy < 0? CA_Cell::get_fake_cell() : ca_matrix.at(xy);//get_or_default(ca_matrix, xy, CA_Cell::get_fake_cell());
+    xy = position_to_cell(msx, msy, x + 1 == msx ? -1 : x + 1, y); auto east_cell  = xy >= max_xy || xy < 0? CA_Cell::get_fake_cell() : ca_matrix.at(xy);//get_or_default(ca_matrix, xy, CA_Cell::get_fake_cell());
 
     if(south_cell.direction == Rotary && east_cell.direction == Rotary) {   // top left
         return std::make_pair(west_cell.position, south_cell.position);
@@ -60,6 +60,29 @@ std::pair<std::pair<int, int>, std::pair<int, int>> get_rotary_neighbors(int msx
         return std::make_pair(north_cell.position, west_cell.position);
     }
 }
+std::pair<std::pair<int, int>, std::pair<int, int>> get_rotary_neighbors(int msx, int msy, int x, int y,
+                                                                         const std::unordered_map<long long, CA_Cell>* ca_matrix) {
+    long long xy;
+    const long long max_xy = msx*msy;
+    xy = position_to_cell(msx, msy, x, y - 1 == -1 ? msy : y - 1); auto north_cell = xy >= max_xy || xy < 0? CA_Cell::get_fake_cell() : ca_matrix->at(xy);
+    xy = position_to_cell(msx, msy, x, y + 1 == msy ? -1 : y + 1); auto south_cell = xy >= max_xy || xy < 0? CA_Cell::get_fake_cell() : ca_matrix->at(xy); //get_or_default(ca_matrix, xy, CA_Cell::get_fake_cell());
+    xy = position_to_cell(msx, msy, x - 1 == -1 ? msx : x - 1, y); auto west_cell  = xy >= max_xy || xy < 0? CA_Cell::get_fake_cell() : ca_matrix->at(xy);//get_or_default(ca_matrix, xy, CA_Cell::get_fake_cell());
+    xy = position_to_cell(msx, msy, x + 1 == msx ? -1 : x + 1, y); auto east_cell  = xy >= max_xy || xy < 0? CA_Cell::get_fake_cell() : ca_matrix->at(xy);//get_or_default(ca_matrix, xy, CA_Cell::get_fake_cell());
+
+    if(south_cell.direction == Rotary && east_cell.direction == Rotary) {   // top left
+        return std::make_pair(west_cell.position, south_cell.position);
+    }
+    if(east_cell.direction == Rotary  && north_cell.direction == Rotary){  // bottom left
+        return std::make_pair(south_cell.position, east_cell.position);
+    }
+    if(north_cell.direction == Rotary && west_cell.direction == Rotary) {  // bottom right
+        return std::make_pair(east_cell.position, north_cell.position);
+    }
+    if(west_cell.direction == Rotary  && south_cell.direction == Rotary) { // top right
+        return std::make_pair(north_cell.position, west_cell.position);
+    }
+}
+
 namespace deprecated {
 void in_rotary_rule(const Vehicle* vehicle,
                     const CA_Cell& exit_cell,
@@ -340,7 +363,7 @@ void in_road_rule(const int msx, const int msy,
 
     if(next_cell.direction == Rotary && priority_vehicle != nullptr){
         std::tie(x,y) = priority_vehicle->position;
-        std::pair<int,int> exit, next; std::tie(exit, next) = get_rotary_neighbors(msx, msy, x, y, ca_matrix);
+        std::pair<int,int> exit, next; std::tie(exit, next) = get_rotary_neighbors(msx, msy, x, y, &ca_matrix);
         priority_vehicle_can_exit_rotary =
                 !exists(vehicles_map, position_to_cell(msx, msy, exit)) &&
                 !exists(vehicles_map_remote, position_to_cell(msx, msy, exit));
@@ -364,8 +387,9 @@ void apply_rule184(const int msx, const int msy,
                           const Vehicle &vehicle,
                           const std::unordered_map<long long, Vehicle> &vehicles_map,
                           const std::unordered_map<long long, Vehicle> &vehicles_map_remote,
-                          std::unordered_map<long long, Vehicle> &vehicles_map_new){
+                          std::unordered_map<long long, Vehicle> *_vehicles_map_new){
     int x, y;
+    std::unordered_map<long long, Vehicle>& vehicles_map_new = *_vehicles_map_new;
     std::tie(x, y) = vehicle.position;
     long long xy = position_to_cell(msx, msy, x, y);
     CA_Cell Ni = ca_matrix.at(xy);
@@ -382,7 +406,7 @@ void apply_rule184(const int msx, const int msy,
             const Vehicle* next_vehicle = get_ptr_vehicle(vehicles_map, vehicles_map_remote, xy);
             //auto next_vehicle = next_vehicle_iterator != vehicles_map_remote.end()? : &(*next_vehicle_iterator) : nullptr;
             xy = position_to_cell(msx, msy, x+1, y-1);
-            auto priority_vehicle = get_or_default(ca_matrix, xy, NoDirection, [](auto v){return v.direction;}) == Rotary ? get_ptr_vehicle(vehicles_map, vehicles_map_remote, xy) : nullptr;
+            auto priority_vehicle = get_or_default(ca_matrix, xy, NoDirection, [](const auto& v){return v.direction;}) == Rotary ? get_ptr_vehicle(vehicles_map, vehicles_map_remote, xy) : nullptr;
 
             parallel::in_road_rule(msx, msy, &vehicle, next_cell, next_vehicle, priority_vehicle, ca_matrix, vehicles_map, vehicles_map_remote, vehicles_map_new);
 
@@ -450,7 +474,7 @@ void apply_rule184(const int msx, const int msy,
             std::cerr << "No direction: skipping..." << std::endl;
     }
 }
-}
+}// end of namespace: parallel
 
 
 #endif //CA_ROAD_RULES_HPP
