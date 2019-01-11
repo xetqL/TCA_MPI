@@ -179,7 +179,7 @@ int main(int argc, char **argv) {
     if(!rank) std::cout << vehicles.size() << std::endl;
     //std::for_each(vehicles.begin(), vehicles.end(), [](auto v){ std::cout << v << std::endl; });
 
-    fprint(out, SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix);
+    //fprint(out, SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix);
     if(!rank){
         auto img = zzframe( SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix);
         img.save("out0.jpg");
@@ -206,7 +206,7 @@ int main(int argc, char **argv) {
 
     while (step < MAX_STEP) {
 
-        //if(!rank) out.open(prefix_fname + std::to_string(step), std::ofstream::out);
+
         MPI_Barrier(bottom);
         PAR_START_TIMING(step_time, bottom);
         int recv, sent;
@@ -263,13 +263,15 @@ int main(int argc, char **argv) {
             auto img = zzframe( SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix_print);
             auto step_str =  std::to_string(step);
             step_str = std::string(std::to_string(MAX_STEP).length() - step_str.length(), '0') + step_str;
-            img.save(( step_str+prefix_fname).c_str());
+            out.open(step_str+"_waiting_time.txt", std::ofstream::out);
+            print_vehicles(out, all_vehicles);
+            //img.save(( step_str+prefix_fname).c_str());
+            out.close();
         }
 
         // Stop printing
         /********************************************************************************************************/
         step++;
-        if(!rank) out.close();
     }
 
     MPI_Finalize();

@@ -226,6 +226,7 @@ void in_rotary_rule(const int msx, const int msy,
         }
     }
     vehicles_map_new[xy] = Vehicle(vehicle->gid, vehicle->lid, next_rotary_cell, 1);
+    vehicles_map_new[xy].waiting_time = 0;
 }
 
 void in_road_rule(const int msx, const int msy,
@@ -371,15 +372,18 @@ void in_road_rule(const int msx, const int msy,
 
     }
     std::pair<int,int> p;
+    int waiting_time = 0;
     if(can_move(next_cell, neighbor_vehicle, priority_vehicle, priority_vehicle_can_exit_rotary)) { //
         p = next_cell.position;
     }else {
         p = vehicle->position;
+        waiting_time = vehicle->waiting_time+1;
     }
     std::tie(x,y) = p;
     // << "From (" << vehicle->position.first << "," << vehicle->position.second << ") to " << "(" << x << "," << y << ")" << std::endl;
     long long xy = position_to_cell(msx, msy, x, y);
     vehicles_map_new[xy] = Vehicle(vehicle->gid, vehicle->lid, x, y, 1);
+    vehicles_map_new[xy].waiting_time = waiting_time;
 }
 
 void apply_rule184(const int msx, const int msy,

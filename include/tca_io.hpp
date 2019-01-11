@@ -83,6 +83,12 @@ void fprint(std::ofstream& out, size_t sx, size_t sy, const std::unordered_map<l
     }
 }
 
+void print_vehicles(std::ofstream& out, std::vector<Vehicle> &vehicle_matrix) {
+    for(auto& v : vehicle_matrix) {
+        out << v.as_readable_string() << std::endl;
+    }
+}
+
 uint8_t* to_frame(size_t sx, size_t sy, const std::unordered_map<long long, CA_Cell> &ca_matrix,
                           const std::unordered_map<long long, Vehicle> &vehicle_matrix){
     const size_t sz = sy*sx;
