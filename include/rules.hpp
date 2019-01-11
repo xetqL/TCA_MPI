@@ -226,7 +226,7 @@ void in_rotary_rule(const int msx, const int msy,
         }
     }
     vehicles_map_new[xy] = Vehicle(vehicle->gid, vehicle->lid, next_rotary_cell, 1);
-    vehicles_map_new[xy].waiting_time = 0;
+    vehicles_map_new[xy].waiting_time++;
 }
 
 void in_road_rule(const int msx, const int msy,

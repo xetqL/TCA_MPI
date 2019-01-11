@@ -178,6 +178,7 @@ namespace load_balancing {
             *nb_elements_recv = 0;
             *nb_elements_sent = 0;
 
+            long nb_reqs;
             int my_bottom_rank; MPI_Comm_rank(bottom, &my_bottom_rank);
             int wsize; MPI_Comm_size(bottom, &wsize);
 
@@ -205,6 +206,8 @@ namespace load_balancing {
             /*********************************************************************************************************
              * COMPUTE DESTINATION FOR DATA ON BOTTOM PROCS
              *********************************************************************************************************/
+            std::vector<int> PEs_distinct;
+            std::vector<int> PE_attendance(wsize, 0);
 
             while (data_id < bot_data_size) {
                 Vehicle& v = bottom_data->at(data_id);
@@ -220,10 +223,17 @@ namespace load_balancing {
                                      pos_in_double.first - cell_size, pos_in_double.second - cell_size, 0.0,
                                      pos_in_double.first + cell_size, pos_in_double.second + cell_size, 0.0,
                                      &PEs_bottom.front(), &num_found_proc, &parts.front(), &num_found_part);
+                if(num_found_proc == 0) continue;
 
-                bool bottom_contain_incr_cpu = contains_at_least_one_of(PEs_bottom.begin(), PEs_bottom.end(), increasing_cpus.begin(), increasing_cpus.end());
-
-                std::set<int> PEs_distinct(PEs_bottom.begin(), PEs_bottom.end());
+                PEs_distinct.clear();
+                std::fill(PE_attendance.begin(), PE_attendance.end(), 0);
+                for (auto& PE : PEs_bottom) {
+                    if(PE >= 0 && !PE_attendance[PE]){
+                        PEs_distinct.push_back(PE);
+                        PE_attendance[PE]++;
+                    }
+                }
+                bool bottom_contain_incr_cpu = contains_at_least_one_of(PEs_distinct.begin(), PEs_distinct.end(), increasing_cpus.begin(), increasing_cpus.end());
 
                 if(bottom_contain_incr_cpu) {
                     /**********************************************************************************
@@ -233,14 +243,18 @@ namespace load_balancing {
                                             pos_in_double.first - cell_size, pos_in_double.second - cell_size, 0.0,
                                             pos_in_double.first + cell_size, pos_in_double.second + cell_size, 0.0,
                                             &PEs_top.front(), &num_found_proc, &parts.front(), &num_found_part);
-                    PEs_distinct.insert(PEs_top.begin(), PEs_top.end());
+                    for (auto& PE : PEs_top) {
+                        if(PE >= 0 && !PE_attendance[PE]){
+                            PEs_distinct.push_back(PE);
+                            PE_attendance[PE]++;
+                        }
+                    }
                 }
 
                 /**********************************************************************************
                  * Mark data as export for every detected PE                                      *
                  **********************************************************************************/
                 for(int PE : PEs_distinct) {
-
                     if (PE >= 0 && PE != my_bottom_rank) {
                         export_gids.push_back(bottom_data->at(data_id).gid);
                         export_lids.push_back(bottom_data->at(data_id).lid);
@@ -259,25 +273,41 @@ namespace load_balancing {
              * EXCHANGE DATA WITH BOTTOM
              *********************************************************************************************************/
 
-            known_gids = (ZOLTAN_ID_PTR) &export_gids.front();
-            known_lids = (ZOLTAN_ID_PTR) &export_lids.front();
-
             // Compute who has to send me something via Zoltan.
-            Zoltan_Invert_Lists(zoltan_bottom, num_known, known_gids, known_lids, &export_procs[0], &export_procs[0],
-                                &num_found, &found_gids, &found_lids, &found_procs, &found_parts);
+///            Zoltan_Invert_Lists(zoltan_bottom, num_known, known_gids, known_lids, &export_procs[0], &export_procs[0],
+///                                &num_found, &found_gids, &found_lids, &found_procs, &found_parts);
 
-            // Compute how many elements I have to import from others, and from whom.
-            for (size_t i = 0; i < num_found; ++i)
-                num_import_from_procs[found_procs[i]]++;
+            num_import_from_procs.resize(wsize);
+            {
+                nb_reqs = std::count_if(data_to_migrate.cbegin(), data_to_migrate.cend(), [](auto buf){return !buf.empty();});
+                std::vector<MPI_Request> send_reqs(nb_reqs),
+                        rcv_reqs(wsize);
+                std::vector<MPI_Status> statuses(wsize);
 
-            std::set<int> tmp_set(found_procs, found_procs+num_found);
-            import_from_procs.assign( tmp_set.begin(), tmp_set.end() );
+                int nb_neighbor = 0;
+                for(int comm_pe = 0; comm_pe < wsize; ++comm_pe){
+                    MPI_Irecv(&num_import_from_procs[comm_pe], 1, MPI_INT, comm_pe, 666, bottom, &rcv_reqs[comm_pe]);
+                    int send_size = data_to_migrate.at(comm_pe).size();
+                    if (send_size) {
+                        MPI_Isend(&send_size, 1, MPI_INT, comm_pe, 666, bottom, &send_reqs[nb_neighbor]);
+                        nb_neighbor++;
+                    }
+                }
+                MPI_Waitall(send_reqs.size(), &send_reqs.front(), MPI_STATUSES_IGNORE);
+                MPI_Barrier(bottom);
+                for(int comm_pe = 0; comm_pe < wsize; ++comm_pe) {
+                    int flag; MPI_Status status;
+                    MPI_Test(&rcv_reqs[comm_pe], &flag, &status);
+                    if(!flag) MPI_Cancel(&rcv_reqs[comm_pe]);
+                }
 
-            // if nothing found, nothing to free.
-            if(num_found > 0)
-                Zoltan_LB_Free_Part(&found_gids, &found_lids, &found_procs, &found_parts);
+                import_from_procs.clear();
+                for(int i = 0; i < wsize; ++i){
+                    if(num_import_from_procs[i] > 0) import_from_procs.push_back(i);
+                }
+            }
 
-            auto nb_reqs = std::count_if(data_to_migrate.cbegin(), data_to_migrate.cend(), [](auto buf){return !buf.empty();});
+            nb_reqs = std::count_if(data_to_migrate.cbegin(), data_to_migrate.cend(), [](auto buf){return !buf.empty();});
             int cpt = 0;
 
             // Send the data to neighbors
@@ -331,17 +361,30 @@ namespace load_balancing {
                                          0.0,
                                          &PEs_bottom.front(), &num_found_proc, &parts.front(), &num_found_part);
 
+                    if(num_found_proc == 0) continue;
+
                     // Erase all the PEs that did not send a data that interact with the current vehicle
-                    std::vector<int> PEs_bottom2;
-                    std::copy_if(PEs_bottom.begin(), PEs_bottom.end(), std::back_inserter(PEs_bottom2), [&bottom_data_tmp, &v, &cell_size](auto pe){
-                        return !exists(bottom_data_tmp, pe) || std::none_of(bottom_data_tmp.at(pe).cbegin(),bottom_data_tmp.at(pe).cend(),[&v, &cell_size](const auto &e) {
-                            return distance2(e, v) <= cell_size;
-                        });
-                    });
+                    std::vector<int> PEs_bottom2(num_found_proc, -1);
+                    for(int i = 0; i < num_found_proc; ++i){
+                        int PE = PEs_bottom[i];
+                        if(PE >= 0 && exists(bottom_data_tmp, PE)) {
+                            bool must_send = std::none_of(bottom_data_tmp[PE].cbegin(), bottom_data_tmp[PE].cend(),[&v, &cell_size](const auto &e) {
+                                return distance2(e, v) <= cell_size;
+                            });
+                            if(must_send) PEs_bottom2[i] = PE;
+                        }
+                    }
 
-                    bool bottom_contain_incr_cpu = contains_at_least_one_of(PEs_bottom.begin(), PEs_bottom.end(), increasing_cpus.begin(), increasing_cpus.end());
+                    PEs_distinct.clear();
+                    std::fill(PE_attendance.begin(), PE_attendance.end(), 0);
+                    for (auto& PE : PEs_bottom) {
+                        if(PE >= 0 && !PE_attendance[PE]){
+                            PEs_distinct.push_back(PE);
+                            PE_attendance[PE]++;
+                        }
+                    }
+                    bool bottom_contain_incr_cpu = contains_at_least_one_of(PEs_distinct.begin(), PEs_distinct.end(), increasing_cpus.begin(), increasing_cpus.end());
 
-                    std::set<int> PEs_distinct(PEs_bottom.begin(), PEs_bottom.end());
 
                     if(bottom_contain_incr_cpu){
                         /**********************************************************************************
@@ -351,8 +394,12 @@ namespace load_balancing {
                                                 pos_in_double.first - cell_size, pos_in_double.second - cell_size, 0.0,
                                                 pos_in_double.first + cell_size, pos_in_double.second + cell_size, 0.0,
                                                 &PEs_top.front(), &num_found_proc, &parts.front(), &num_found_part);
-                        PEs_distinct.insert(PEs_top.begin(), PEs_top.end());
-                    }
+                        for (auto& PE : PEs_top) {
+                            if(PE >= 0 && !PE_attendance[PE]){
+                                PEs_distinct.push_back(PE);
+                                PE_attendance[PE]++;
+                            }
+                        }                    }
 
 
                     /**********************************************************************************
@@ -381,15 +428,38 @@ namespace load_balancing {
             known_lids = (ZOLTAN_ID_PTR) &export_lids.front();
 
             // Compute who has to send me something via Zoltan.
-            Zoltan_Invert_Lists(zoltan_bottom, num_known, known_gids, known_lids, &export_procs[0], &export_procs[0],
-                                &num_found, &found_gids, &found_lids, &found_procs, &found_parts);
+///            Zoltan_Invert_Lists(zoltan_bottom, num_known, known_gids, known_lids, &export_procs[0], &export_procs[0],
+///                                &num_found, &found_gids, &found_lids, &found_procs, &found_parts);
 
-            // Compute how many elements I have to import from others, and from whom.
-            for (size_t i = 0; i < num_found; ++i)
-                num_import_from_procs[found_procs[i]]++;
+            num_import_from_procs.resize(wsize);
+            {
+                nb_reqs = std::count_if(data_to_migrate.cbegin(), data_to_migrate.cend(), [](auto buf){return !buf.empty();});
+                std::vector<MPI_Request> send_reqs(nb_reqs),
+                                         rcv_reqs(wsize);
+                std::vector<MPI_Status> statuses(wsize);
 
-            std::set<int> tmp_set2(found_procs, found_procs+num_found);
-            import_from_procs.assign( tmp_set2.begin(), tmp_set2.end() );
+                int nb_neighbor = 0;
+                for(int comm_pe = 0; comm_pe < wsize; ++comm_pe){
+                    MPI_Irecv(&num_import_from_procs[comm_pe], 1, MPI_INT, comm_pe, 666, bottom, &rcv_reqs[comm_pe]);
+                    int send_size = data_to_migrate.at(comm_pe).size();
+                    if (send_size) {
+                        MPI_Isend(&send_size, 1, MPI_INT, comm_pe, 666, bottom, &send_reqs[nb_neighbor]);
+                        nb_neighbor++;
+                    }
+                }
+                MPI_Waitall(send_reqs.size(), &send_reqs.front(), MPI_STATUSES_IGNORE);
+                MPI_Barrier(bottom);
+                for(int comm_pe = 0; comm_pe < wsize; ++comm_pe) {
+                    int flag; MPI_Status status;
+                    MPI_Test(&rcv_reqs[comm_pe], &flag, &status);
+                    if(!flag) MPI_Cancel(&rcv_reqs[comm_pe]);
+                }
+
+                import_from_procs.clear();
+                for(int i = 0; i < wsize; ++i){
+                    if(num_import_from_procs[i] > 0) import_from_procs.push_back(i);
+                }
+            }
 
 
             // if nothing found, nothing to free.

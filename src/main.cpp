@@ -33,6 +33,7 @@ MPI_Barrier(comm); \
 auto v = MPI_Wtime()
 
 #define PAR_RESTART_TIMING(v, comm) \
+std::cout <<"Intermediate result " << v << std::endl;\
 MPI_Barrier(comm); \
 v = MPI_Wtime() - v
 
@@ -196,10 +197,9 @@ int main(int argc, char **argv) {
 
     auto err = load_balancing::esoteric::get_communicator(slope, rank, bottom, &incr_cpu);
 
-    if(err) std::cout << err << " no esoteric call" << std::endl;
+    //if(err) std::cout << err << " no esoteric call" << std::endl;
 
     std::vector<Vehicle> top_vehicles;
-
     auto zztop = load_balancing::esoteric::divide_data_into_top_bottom(&vehicles , &top_vehicles, incr_cpu, datatype.elements_datatype, bottom);
 
     int step = 0;
@@ -212,7 +212,8 @@ int main(int argc, char **argv) {
         int recv, sent;
         /*************************************Start parallel exchange********************************************/
         PAR_START_TIMING(comm_time, bottom);
-        auto remote_data = load_balancing::esoteric::exchange(zz, zztop, &vehicles, &top_vehicles, &recv, &sent, incr_cpu, datatype.elements_datatype, bottom, 1.0); //zoltan_exchange_data(vehicles, zz, datatype.elements_datatype, bottom, recv, sent, 1.2);
+        auto remote_data = load_balancing::esoteric::exchange(zz, zztop, &vehicles, &top_vehicles, &recv, &sent, incr_cpu, datatype.elements_datatype, bottom, 1.0);
+        //auto remote_data =  zoltan_exchange_data(zz, &vehicles, &recv, &sent, datatype.elements_datatype, bottom,  1.2);
         PAR_STOP_TIMING(comm_time, bottom);
         // Stop parallel exchange
 
@@ -231,11 +232,13 @@ int main(int argc, char **argv) {
         // Stop parallel computation
 
         /********************************Start load balancing and migration**************************************/
-        PAR_RESTART_TIMING(comm_time, bottom);
-        load_balancing::esoteric::migrate(zz, zztop, &vehicles, &top_vehicles, incr_cpu, datatype.elements_datatype, bottom );//zoltan_migrate_particles(vehicles, zz, datatype.elements_datatype, bottom);
-        PAR_STOP_TIMING(comm_time, bottom);
-
+        PAR_START_TIMING(migrate_time, bottom);
+        load_balancing::esoteric::migrate(zz, zztop, &vehicles, &top_vehicles, incr_cpu, datatype.elements_datatype, bottom );
+        //zoltan_migrate_particles(zz, &vehicles, datatype.elements_datatype, bottom);
         //zoltan_load_balance(&vehicles, zz, ENABLE_AUTOMATIC_MIGRATION);
+        PAR_STOP_TIMING(migrate_time, bottom);
+
+
 
         // Stop load balancing and migration
         MPI_Barrier(bottom);
@@ -246,7 +249,8 @@ int main(int argc, char **argv) {
             std::cout << "Time for step " << step
                       << "; [TOT " << step_time
                       << ", CPT " << computation_time
-                      << ", COM " << comm_time
+                      << ", COM EXCHANGE " << comm_time
+                      << ", COM * MIGRATE " << migrate_time
                       << "] => " << (100*computation_time/step_time)<<"% CPT "
                       << (100*comm_time/step_time)<<"% COM" << std::endl;
 

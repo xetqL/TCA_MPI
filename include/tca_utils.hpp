@@ -43,10 +43,8 @@ inline bool exists(const Map &map, const key k1){
 }
 
 inline double distance2(const Vehicle& v1, const Vehicle& v2){
-    int x1,y1; std::tie(x1,y1) = v1.position;
-    int x2,y2; std::tie(x2,y2) = v2.position;
-    const double dx = x1-x2;
-    const double dy = y1-y2;
+    const double dx = v1.position.first-v2.position.first;
+    const double dy = v1.position.second-v2.position.second;
     return dx*dx+dy*dy;
 }
 
@@ -92,7 +90,7 @@ void randomize_cars_position(size_t sx, size_t sy, const std::vector<std::vector
     for (size_t y = 0; y < sy; y++) {
         for (size_t x = 0; x < sx; x++) {
             if (ca_matrix[y][x].direction != NoDirection) {
-                if (rand() % 100 > 20) {
+                if (rand() % 100 > 66) {
                     vehicles->emplace_back(gid, gid, x, y, 1);
                     vehicle_matrix->operator[](y)[x] = &(*(vehicles->end() - 1));
                     gid++;
@@ -109,7 +107,7 @@ void randomize_cars_position(size_t sx, size_t sy, const std::unordered_map<long
     for (size_t y = 0; y < sy; y++) {
         for (size_t x = 0; x < sx; x++) {
             if (ca_matrix.at(position_to_cell(sx, sy, x, y)).direction != NoDirection) {
-                if (rand() % 100 > 66) {
+                if (rand() % 100 > 10) {
                     vehicle_matrix[position_to_cell(sx, sy, x, y)] = Vehicle(gid, gid, x, y, 1);
                     gid++;
                 }

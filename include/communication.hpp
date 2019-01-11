@@ -82,7 +82,7 @@ const std::vector<A> zoltan_exchange_data(Zoltan_Struct *load_balancer,
 
     std::vector<A> buffer;
     std::vector<A> remote_data_gathered;
-
+    long nb_reqs = 0;
     if (wsize == 1) return remote_data_gathered;
 
     std::vector<std::vector<A>> data_to_migrate(wsize);
@@ -120,34 +120,40 @@ const std::vector<A> zoltan_exchange_data(Zoltan_Struct *load_balancer,
         data_id++; //if the element must stay with me then check the next one
     }
 
-    ZOLTAN_ID_PTR known_gids = (ZOLTAN_ID_PTR) &export_gids.front();
-    ZOLTAN_ID_PTR known_lids = (ZOLTAN_ID_PTR) &export_lids.front();
-    ZOLTAN_ID_PTR found_gids, found_lids;
-
-    int *found_procs, *found_parts;
-
 // Compute who has to send me something via Zoltan.
-    int ierr = Zoltan_Invert_Lists(load_balancer, num_known, known_gids, known_lids, &export_procs[0], &export_procs[0],
-                                   &num_found, &found_gids, &found_lids, &found_procs, &found_parts);
+///    int ierr = Zoltan_Invert_Lists(load_balancer, num_known, known_gids, known_lids, &export_procs[0], &export_procs[0],
+///                                   &num_found, &found_gids, &found_lids, &found_procs, &found_parts);
 
     std::vector<int> num_import_from_procs(wsize);
     std::vector<int> import_from_procs;
 
-// Compute how many elements I have to import from others, and from whom.
-    for (size_t i = 0; i < num_found; ++i) {
-        num_import_from_procs[found_procs[i]]++;
-        if (std::find(import_from_procs.begin(), import_from_procs.end(), found_procs[i]) == import_from_procs.end())
-            import_from_procs.push_back(found_procs[i]);
-    }
+    {
+        nb_reqs = std::count_if(data_to_migrate.cbegin(), data_to_migrate.cend(), [](auto buf){return !buf.empty();});
+        std::vector<MPI_Request> send_reqs(nb_reqs),
+                rcv_reqs(wsize);
+        std::vector<MPI_Status> statuses(wsize);
 
-// if nothing found, nothing to free.
-    if (num_found > 0)
-        Zoltan_LB_Free_Part(&found_gids, &found_lids, &found_procs, &found_parts);
+        int nb_neighbor = 0;
+        for(int comm_pe = 0; comm_pe < wsize; ++comm_pe){
+            MPI_Irecv(&num_import_from_procs[comm_pe], 1, MPI_INT, comm_pe, 666, LB_COMM, &rcv_reqs[comm_pe]);
+            int send_size = data_to_migrate.at(comm_pe).size();
+            if (send_size) {
+                MPI_Isend(&send_size, 1, MPI_INT, comm_pe, 666, LB_COMM, &send_reqs[nb_neighbor]);
+                nb_neighbor++;
+            }
+        }
+        MPI_Waitall(send_reqs.size(), &send_reqs.front(), MPI_STATUSES_IGNORE);
+        MPI_Barrier(LB_COMM);
+        for(int comm_pe = 0; comm_pe < wsize; ++comm_pe) {
+            int flag; MPI_Status status;
+            MPI_Test(&rcv_reqs[comm_pe], &flag, &status);
+            if(!flag) MPI_Cancel(&rcv_reqs[comm_pe]);
+        }
 
-    int nb_reqs = 0;
-// Just check how many requests I have to create
-    for (auto buf: data_to_migrate) {
-        if (!buf.empty()) nb_reqs++;
+        import_from_procs.clear();
+        for(int i = 0; i < wsize; ++i){
+            if(num_import_from_procs[i] > 0) import_from_procs.push_back(i);
+        }
     }
 
     int cpt = 0;
