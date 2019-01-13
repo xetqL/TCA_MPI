@@ -250,4 +250,44 @@ void create_random_left_sources(int n, const size_t SIZE_X, const size_t SIZE_Y,
     }
 }
 
+std::tuple<int, int, int, int> get_geometriy_from_vehicles(int rank, Zoltan_Struct* zz, const std::unordered_map<long long, Vehicle>& my_vehicles, const size_t SIZE_X, const size_t SIZE_Y) {
+    int x, y, minx= SIZE_X, miny = SIZE_Y, maxx=-1,maxy=-1;
+    //create boundaries from vehicles
+    for(const auto& v : my_vehicles) {
+        std::tie(x, y) = cell_to_position(SIZE_X, SIZE_Y, v.first);
+        minx = std::min(x, minx); miny = std::min(y, miny);
+        maxx = std::max(x, maxx); maxy = std::max(y, maxy);
+    }
+    //then grow from those boundaries to the edges of my own area
+    //using linear search (but maybe, binary search could provide better perf.) TODO: test with binary search
+    int PE, part;
+    std::array<double, 2> pos_in_double;
+    for(int i = minx; i > 0; --i) {
+        pos_in_double = {i, miny};
+        Zoltan_LB_Point_PP_Assign(zz, &pos_in_double.front(), &PE, &part);
+        if(PE == rank) // my point
+            minx = i;
+    }
+    for(int i = miny; i > 0; --i) {
+        pos_in_double = {minx, i};
+        Zoltan_LB_Point_PP_Assign(zz, &pos_in_double.front(), &PE, &part);
+        if(PE == rank) // my point
+            minx = i;
+    }
+    for(int i = maxx; i < SIZE_X; ++i) {
+        pos_in_double = {i, maxy};
+        Zoltan_LB_Point_PP_Assign(zz, &pos_in_double.front(), &PE, &part);
+        if(PE == rank) // my point
+            maxx = i;
+    }
+    for(int i = maxy; i < SIZE_Y; ++i) {
+        pos_in_double = {maxx, i};
+        Zoltan_LB_Point_PP_Assign(zz, &pos_in_double.front(), &PE, &part);
+        if(PE == rank) // my point
+            maxx = i;
+    }
+    return std::make_tuple(minx, maxx, miny, maxy);
+}
+
+
 #endif //CA_ROAD_TCA_UTILS_HPP

@@ -197,10 +197,10 @@ int main(int argc, char **argv) {
 
     auto err = load_balancing::esoteric::get_communicator(slope, rank, bottom, &incr_cpu);
 
-    //if(err) std::cout << err << " no esoteric call" << std::endl;
+    // if(err) std::cout << err << " no esoteric call" << std::endl;
 
     std::vector<Vehicle> top_vehicles;
-    auto zztop = load_balancing::esoteric::divide_data_into_top_bottom(&vehicles , &top_vehicles, incr_cpu, datatype.elements_datatype, bottom);
+    // auto zztop = load_balancing::esoteric::divide_data_into_top_bottom(&vehicles , &top_vehicles, incr_cpu, datatype.elements_datatype, bottom);
 
     int step = 0;
 
@@ -212,8 +212,8 @@ int main(int argc, char **argv) {
         int recv, sent;
         /*************************************Start parallel exchange********************************************/
         PAR_START_TIMING(comm_time, bottom);
-        auto remote_data = load_balancing::esoteric::exchange(zz, zztop, &vehicles, &top_vehicles, &recv, &sent, incr_cpu, datatype.elements_datatype, bottom, 1.0);
-        //auto remote_data =  zoltan_exchange_data(zz, &vehicles, &recv, &sent, datatype.elements_datatype, bottom,  1.2);
+        //auto remote_data = load_balancing::esoteric::exchange(zz, zztop, &vehicles, &top_vehicles, &recv, &sent, incr_cpu, datatype.elements_datatype, bottom, 1.0);
+        auto remote_data =  zoltan_exchange_data(zz, &vehicles, &recv, &sent, datatype.elements_datatype, bottom,  1.2);
         PAR_STOP_TIMING(comm_time, bottom);
         // Stop parallel exchange
 
@@ -233,8 +233,8 @@ int main(int argc, char **argv) {
 
         /********************************Start load balancing and migration**************************************/
         PAR_START_TIMING(migrate_time, bottom);
-        load_balancing::esoteric::migrate(zz, zztop, &vehicles, &top_vehicles, incr_cpu, datatype.elements_datatype, bottom );
-        //zoltan_migrate_particles(zz, &vehicles, datatype.elements_datatype, bottom);
+        //load_balancing::esoteric::migrate(zz, zztop, &vehicles, &top_vehicles, incr_cpu, datatype.elements_datatype, bottom );
+        zoltan_migrate_particles(zz, &vehicles, datatype.elements_datatype, bottom);
         //zoltan_load_balance(&vehicles, zz, ENABLE_AUTOMATIC_MIGRATION);
         PAR_STOP_TIMING(migrate_time, bottom);
 

@@ -223,6 +223,7 @@ namespace load_balancing {
                                      pos_in_double.first - cell_size, pos_in_double.second - cell_size, 0.0,
                                      pos_in_double.first + cell_size, pos_in_double.second + cell_size, 0.0,
                                      &PEs_bottom.front(), &num_found_proc, &parts.front(), &num_found_part);
+
                 if(num_found_proc == 0) continue;
 
                 PEs_distinct.clear();
