@@ -6,7 +6,7 @@ find_package(MPI REQUIRED)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_COMPILER ${MPI_CXX_COMPILER})
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -std=c++17")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -std=c++17 ")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_PREFIX_PATH  "~/libraries/")
 
@@ -29,6 +29,10 @@ add_executable(CA_road
         src/main.cpp include/tca_utils.hpp include/tca_io.hpp include/gif.h src/zupply.cpp src/zupply.hpp)
 
 message(${CMAKE_SOURCE_DIR})
+
+if(DEFINED UNLOADING_MODEL)
+   target_compile_definitions(CA_road PRIVATE UNLOADING_MODEL=${UNLOADING_MODEL})
+endif()
 
 target_include_directories(CA_road INTERFACE ${CMAKE_SOURCE_DIR}/include)
 target_include_directories(CA_road PRIVATE ${ZOLTAN_INCLUDES})

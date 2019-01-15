@@ -13,7 +13,7 @@
 #include "../include/unloading_model.hpp"
 #include "../include/tca_io.hpp"
 #include "../include/gif.h"
-//#include "../include/geometric_load_balancer.hpp"
+
 #include "zupply.hpp"
 
 #define SPATIAL_DISCRETISATION_X = 7.5 //the average length a conventional vehicle occupies in a closely packed jam (and as such, its width is neglected),
@@ -43,10 +43,9 @@ v = MPI_Wtime() - v
 
 using namespace std;
 using namespace tca;
-
 ///TODO: Colormap as function of waiting time
 ///Parse data afterward
-
+#define UNLOADING_MODEL 1
 std::tuple<std::vector<Vehicle>, vector<vector<Vehicle *> > > update(const int msx, const int msy,
                                                                      const vector<vector<CA_Cell> > &ca_matrix,
                                                                      const std::vector<Vehicle> &vehicles,
@@ -152,25 +151,15 @@ int main(int argc, char **argv) {
     const int MAX_STEP = std::atoi(argv[2]);
     std::vector<int> road_y_pos;
 
-
     SIZE_X = std::atoi(argv[3]);
     SIZE_Y = std::atoi(argv[4]);
     std::tie(ca_matrix, std::ignore, road_y_pos) = generate_random_manhattan(SIZE_X, SIZE_Y);
-
-    //    std::tie(SIZE_X, SIZE_Y) = read_roadfile(argv[3], &ca_matrix);
 
     create_random_left_sources(3, SIZE_X, SIZE_Y, road_y_pos, &ca_matrix);
 
     if(!rank) std::cout << "End of map generation\nStarting computations..." << std::endl;
 
-    //
-
-    //vector<vector<CA_Cell> > ca_matrix;
-
-    //vector<Vehicle> vehicles;
-
     unordered_map<long long, Vehicle> vehicle_matrix;
-    //vector<vector<Vehicle *> > vehicle_matrix(SIZE_Y, vector<Vehicle *>(SIZE_X, nullptr));
 
     auto datatype = Vehicle::register_datatype();
     if(!rank)
@@ -178,42 +167,42 @@ int main(int argc, char **argv) {
     auto vehicles = to_vec(vehicle_matrix);
 
     if(!rank) std::cout << vehicles.size() << std::endl;
-    //std::for_each(vehicles.begin(), vehicles.end(), [](auto v){ std::cout << v << std::endl; });
 
-    //fprint(out, SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix);
     if(!rank){
         auto img = zzframe( SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix);
         img.save("out0.jpg");
     }
     auto zz = zoltan_create_wrapper(ENABLE_AUTOMATIC_MIGRATION, MPI_COMM_WORLD);
 
-    //auto remote_data = zoltan_exchange_data(vehicles, zz, datatype.elements_datatype, bottom, recv, sent);
-    //std::for_each(remote_data.begin(), remote_data.end(), [](auto v){std::cout << v << std::endl;});
-
     zoltan_load_balance(&vehicles, zz, ENABLE_AUTOMATIC_MIGRATION);
 
-    double slope = rank == 0 ? 0.3 : 0.0;
-    std::vector<int> incr_cpu;
-
-    auto err = load_balancing::esoteric::get_communicator(slope, rank, bottom, &incr_cpu);
-
-    // if(err) std::cout << err << " no esoteric call" << std::endl;
-
     std::vector<Vehicle> top_vehicles;
-    // auto zztop = load_balancing::esoteric::divide_data_into_top_bottom(&vehicles , &top_vehicles, incr_cpu, datatype.elements_datatype, bottom);
+
+#if UNLOADING_MODEL > 0
+    if(!rank) std::cout << "UNLOADING MODEL APPLIED" << std::endl;
+    auto geom = get_geometry_from_vehicles(rank, zz, vehicles, SIZE_X, SIZE_Y);
+    double slope = rank == 0 ? 2 : 0.0;
+    auto model_state = load_balancing::esoteric::init_unloading_model(0, slope, rank, vehicles, bottom);
+    if(model_state.state) std::cout << "no esoteric call" << std::endl;
+    else if(!rank) std::cout << "Next call in " << model_state.sigma << "iterations "<<std::endl;
+    auto zztop = load_balancing::esoteric::start_unloading_model(&vehicles , &top_vehicles, model_state, datatype.elements_datatype, bottom);
+#endif
 
     int step = 0;
 
     while (step < MAX_STEP) {
-
-
         MPI_Barrier(bottom);
         PAR_START_TIMING(step_time, bottom);
         int recv, sent;
         /*************************************Start parallel exchange********************************************/
         PAR_START_TIMING(comm_time, bottom);
-        //auto remote_data = load_balancing::esoteric::exchange(zz, zztop, &vehicles, &top_vehicles, &recv, &sent, incr_cpu, datatype.elements_datatype, bottom, 1.0);
+#if UNLOADING_MODEL > 0
+
+        auto remote_data = load_balancing::esoteric::exchange(zz, zztop, &vehicles, &top_vehicles, &recv, &sent, geom, model_state.increasing_cpus, datatype.elements_datatype, bottom, 1.0);
+
+#else
         auto remote_data =  zoltan_exchange_data(zz, &vehicles, &recv, &sent, datatype.elements_datatype, bottom,  1.2);
+#endif
         PAR_STOP_TIMING(comm_time, bottom);
         // Stop parallel exchange
 
@@ -222,7 +211,7 @@ int main(int argc, char **argv) {
         auto vehicle_matrix_remote = to_map(SIZE_X, SIZE_Y, remote_data);
         auto vehicle_matrix_bottom = to_map(SIZE_X, SIZE_Y, vehicles);
         auto vehicle_matrix_top    = to_map(SIZE_X, SIZE_Y, top_vehicles);
-        auto updated_vehicle_matrix1 = parallel_update(SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix_bottom, vehicle_matrix_remote);
+        auto updated_vehicle_matrix1 = parallel_update_new_model(SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix_bottom, vehicle_matrix_top, vehicle_matrix_remote);
         auto updated_vehicle_matrix2 = parallel_update_new_model(SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix_top, vehicle_matrix_bottom, vehicle_matrix_remote);
         generate_vehicles(step, rank, SIZE_X, SIZE_Y, zz, ca_matrix, &updated_vehicle_matrix1);
         vehicles     = to_vec(updated_vehicle_matrix1);
@@ -230,39 +219,40 @@ int main(int argc, char **argv) {
         PAR_STOP_TIMING(computation_time, bottom);
 
         // Stop parallel computation
-
         /********************************Start load balancing and migration**************************************/
         PAR_START_TIMING(migrate_time, bottom);
-        //load_balancing::esoteric::migrate(zz, zztop, &vehicles, &top_vehicles, incr_cpu, datatype.elements_datatype, bottom );
+#if UNLOADING_MODEL > 0
+
+        load_balancing::esoteric::migrate(zz, zztop, &vehicles, &top_vehicles, model_state.increasing_cpus, datatype.elements_datatype, bottom );
+#else
         zoltan_migrate_particles(zz, &vehicles, datatype.elements_datatype, bottom);
-        //zoltan_load_balance(&vehicles, zz, ENABLE_AUTOMATIC_MIGRATION);
+        zoltan_load_balance(&vehicles, zz, ENABLE_AUTOMATIC_MIGRATION);
+#endif
         PAR_STOP_TIMING(migrate_time, bottom);
-
-
-
         // Stop load balancing and migration
+#if UNLOADING_MODEL > 0
+
+        load_balancing::esoteric::stop_unloading_model(step, zz, zztop, &vehicles, &top_vehicles, model_state, bottom);
+#endif
         MPI_Barrier(bottom);
         PAR_STOP_TIMING(step_time, bottom);
 
         /****************************************Start printing**************************************************/
-        if(!rank)
+        std::vector<Vehicle> all_vehicles;
+        if(wsize > 1) {
+            gather_elements_on(vehicles, 0, &all_vehicles, datatype.elements_datatype, bottom);
+            gather_elements_on(top_vehicles, 0, &all_vehicles, datatype.elements_datatype, bottom);
+        } else all_vehicles = vehicles;
+
+        if(!rank) {
             std::cout << "Time for step " << step
                       << "; [TOT " << step_time
                       << ", CPT " << computation_time
                       << ", COM EXCHANGE " << comm_time
-                      << ", COM * MIGRATE " << migrate_time
+                      << ", COM MIGRATE " << migrate_time
                       << "] => " << (100*computation_time/step_time)<<"% CPT "
                       << (100*comm_time/step_time)<<"% COM" << std::endl;
 
-        std::vector<Vehicle> all_vehicles;
-
-        if(wsize > 1) {
-            gather_elements_on(vehicles, 0, &all_vehicles, datatype.elements_datatype, bottom);
-            gather_elements_on(top_vehicles, 0, &all_vehicles, datatype.elements_datatype, bottom);
-        }
-        else all_vehicles = vehicles;
-
-        if(!rank) {
             auto vehicle_matrix_print = to_map(SIZE_X, SIZE_Y, all_vehicles);
             auto img = zzframe( SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix_print);
             auto step_str =  std::to_string(step);
@@ -272,7 +262,6 @@ int main(int argc, char **argv) {
             //img.save(( step_str+prefix_fname).c_str());
             out.close();
         }
-
         // Stop printing
         /********************************************************************************************************/
         step++;

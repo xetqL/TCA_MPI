@@ -22,14 +22,7 @@ inline retval get_or_default(const std::unordered_map<key, val>& map, const key&
         return def;
     return map.at(k1);
 }
-/*
-template<class key, class val, class retval, class RetFunc>
-inline retval get_or_default(const std::unordered_map<key, val> map, const key k1, const retval def,  RetFunc f){
-    if(map.find(k1) == map.cend())
-        return def;
-    return f(map.at(k1));
-}
-*/
+
 template<class key, class val, class retval>
 inline retval get_or_default(const std::unordered_map<key, val> map, const key k1, const retval def) {
     if(map.find(k1) == map.cend())
@@ -107,7 +100,7 @@ void randomize_cars_position(size_t sx, size_t sy, const std::unordered_map<long
     for (size_t y = 0; y < sy; y++) {
         for (size_t x = 0; x < sx; x++) {
             if (ca_matrix.at(position_to_cell(sx, sy, x, y)).direction != NoDirection) {
-                if (rand() % 100 > 10) {
+                if (rand() % 100 > 50) {
                     vehicle_matrix[position_to_cell(sx, sy, x, y)] = Vehicle(gid, gid, x, y, 1);
                     gid++;
                 }
@@ -250,7 +243,7 @@ void create_random_left_sources(int n, const size_t SIZE_X, const size_t SIZE_Y,
     }
 }
 
-std::tuple<int, int, int, int> get_geometriy_from_vehicles(int rank, Zoltan_Struct* zz, const std::unordered_map<long long, Vehicle>& my_vehicles, const size_t SIZE_X, const size_t SIZE_Y) {
+std::tuple<int, int, int, int> get_geometry_from_vehicles(int rank, Zoltan_Struct* zz, const std::unordered_map<long long, Vehicle>& my_vehicles, const size_t SIZE_X, const size_t SIZE_Y) {
     int x, y, minx= SIZE_X, miny = SIZE_Y, maxx=-1,maxy=-1;
     //create boundaries from vehicles
     for(const auto& v : my_vehicles) {
@@ -263,31 +256,81 @@ std::tuple<int, int, int, int> get_geometriy_from_vehicles(int rank, Zoltan_Stru
     int PE, part;
     std::array<double, 2> pos_in_double;
     for(int i = minx; i > 0; --i) {
-        pos_in_double = {i, miny};
+        pos_in_double = {(double) i, (double) miny};
         Zoltan_LB_Point_PP_Assign(zz, &pos_in_double.front(), &PE, &part);
         if(PE == rank) // my point
             minx = i;
     }
+
     for(int i = miny; i > 0; --i) {
-        pos_in_double = {minx, i};
+        pos_in_double = {(double) minx, (double) i};
         Zoltan_LB_Point_PP_Assign(zz, &pos_in_double.front(), &PE, &part);
         if(PE == rank) // my point
             minx = i;
     }
+
     for(int i = maxx; i < SIZE_X; ++i) {
-        pos_in_double = {i, maxy};
+        pos_in_double = {(double) i, (double) maxy};
         Zoltan_LB_Point_PP_Assign(zz, &pos_in_double.front(), &PE, &part);
         if(PE == rank) // my point
             maxx = i;
     }
+
     for(int i = maxy; i < SIZE_Y; ++i) {
-        pos_in_double = {maxx, i};
+        pos_in_double = {(double) maxx, (double) i};
         Zoltan_LB_Point_PP_Assign(zz, &pos_in_double.front(), &PE, &part);
         if(PE == rank) // my point
             maxx = i;
     }
+
+    return std::make_tuple(minx, maxx, miny, maxy);
+}
+std::tuple<int, int, int, int> get_geometry_from_vehicles(int rank, Zoltan_Struct* zz, const std::vector<Vehicle>& my_vehicles, const size_t SIZE_X, const size_t SIZE_Y) {
+    int x, y, minx= SIZE_X, miny = SIZE_Y, maxx=-1,maxy=-1;
+    //create boundaries from vehicles
+    for(const auto& v : my_vehicles) {
+        std::tie(x, y) = v.position;
+        minx = std::min(x, minx); miny = std::min(y, miny);
+        maxx = std::max(x, maxx); maxy = std::max(y, maxy);
+    }
+    //then grow from those boundaries to the edges of my own area
+    //using linear search (but maybe, binary search could provide better perf.) TODO: test with binary search
+    int PE, part;
+    std::array<double, 2> pos_in_double;
+    for(int i = minx; i > 0; --i) {
+        pos_in_double = {(double) i, (double) miny};
+        Zoltan_LB_Point_PP_Assign(zz, &pos_in_double.front(), &PE, &part);
+        if(PE == rank) // my point
+            minx = i;
+    }
+
+    for(int i = miny; i > 0; --i) {
+        pos_in_double = {(double) minx, (double) i};
+        Zoltan_LB_Point_PP_Assign(zz, &pos_in_double.front(), &PE, &part);
+        if(PE == rank) // my point
+            minx = i;
+    }
+
+    for(int i = maxx; i < SIZE_X; ++i) {
+        pos_in_double = {(double) i, (double) maxy};
+        Zoltan_LB_Point_PP_Assign(zz, &pos_in_double.front(), &PE, &part);
+        if(PE == rank) // my point
+            maxx = i;
+    }
+
+    for(int i = maxy; i < SIZE_Y; ++i) {
+        pos_in_double = {(double) maxx, (double) i};
+        Zoltan_LB_Point_PP_Assign(zz, &pos_in_double.front(), &PE, &part);
+        if(PE == rank) // my point
+            maxx = i;
+    }
+
     return std::make_tuple(minx, maxx, miny, maxy);
 }
 
+inline bool inside_the_borders(const Vehicle& vehicle, const std::tuple<int, int, int, int>& my_area, const int border_size=1) {
+    return (vehicle.position.first  <= std::get<0>(my_area)+border_size)|| (std::get<1>(my_area)-border_size <= vehicle.position.first) ||
+           (vehicle.position.second <= std::get<2>(my_area)+border_size)|| (std::get<3>(my_area)-border_size <= vehicle.position.second);
+}
 
 #endif //CA_ROAD_TCA_UTILS_HPP
