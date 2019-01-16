@@ -183,7 +183,7 @@ int main(int argc, char **argv) {
     auto geom = get_geometry_from_vehicles(rank, zz, vehicles, SIZE_X, SIZE_Y);
     double slope = rank == 0 ? 2 : 0.0;
     auto model_state = load_balancing::esoteric::init_unloading_model(0, slope, rank, vehicles, bottom);
-    if(model_state.state) std::cout << "no esoteric call" << std::endl;
+    if(model_state.state != load_balancing::esoteric::MODEL_STATE::init) std::cout << "no esoteric call" << std::endl;
     else if(!rank) std::cout << "Next call in " << model_state.sigma << "iterations "<<std::endl;
     auto zztop = load_balancing::esoteric::start_unloading_model(&vehicles , &top_vehicles, model_state, datatype.elements_datatype, bottom);
 #endif
@@ -191,6 +191,16 @@ int main(int argc, char **argv) {
     int step = 0;
 
     while (step < MAX_STEP) {
+
+        if(model_state.state == load_balancing::esoteric::MODEL_STATE::finished) {
+
+            model_state = load_balancing::esoteric::init_unloading_model(step, slope, rank, vehicles, bottom);
+            zztop = load_balancing::esoteric::start_unloading_model(&vehicles , &top_vehicles, model_state, datatype.elements_datatype, bottom);
+            if(!rank) {
+                std::cout << "Restarting model\n-> Next call in " << model_state.sigma << "iterations "<<std::endl;
+            }
+        }
+
         MPI_Barrier(bottom);
         PAR_START_TIMING(step_time, bottom);
         int recv, sent;
@@ -198,7 +208,6 @@ int main(int argc, char **argv) {
         PAR_START_TIMING(comm_time, bottom);
 #if UNLOADING_MODEL > 0
         auto remote_data = load_balancing::esoteric::exchange(zz, zztop, &vehicles, &top_vehicles, &recv, &sent, geom, model_state.increasing_cpus, datatype.elements_datatype, bottom, 1.0);
-
 #else
         auto remote_data =  zoltan_exchange_data(zz, &vehicles, &recv, &sent, datatype.elements_datatype, bottom,  1.2);
 #endif
@@ -221,8 +230,7 @@ int main(int argc, char **argv) {
         /********************************Start load balancing and migration**************************************/
         PAR_START_TIMING(migrate_time, bottom);
 #if UNLOADING_MODEL > 0
-
-        load_balancing::esoteric::migrate(zz, zztop, &vehicles, &top_vehicles, model_state.increasing_cpus, datatype.elements_datatype, bottom );
+        load_balancing::esoteric::migrate(zz, zztop, &vehicles, &top_vehicles, model_state.increasing_cpus, datatype.elements_datatype, bottom);
 #else
         zoltan_migrate_particles(zz, &vehicles, datatype.elements_datatype, bottom);
         zoltan_load_balance(&vehicles, zz, ENABLE_AUTOMATIC_MIGRATION);
@@ -230,8 +238,9 @@ int main(int argc, char **argv) {
         PAR_STOP_TIMING(migrate_time, bottom);
         // Stop load balancing and migration
 #if UNLOADING_MODEL > 0
-
-        load_balancing::esoteric::stop_unloading_model(step, zz, zztop, &vehicles, &top_vehicles, model_state, bottom);
+        auto model_stopped = load_balancing::esoteric::stop_unloading_model(step, zz, zztop, &vehicles, &top_vehicles, model_state, bottom);
+        if(model_stopped)
+            zoltan_load_balance(&vehicles, zz, ENABLE_AUTOMATIC_MIGRATION);
 #endif
         MPI_Barrier(bottom);
         PAR_STOP_TIMING(step_time, bottom);

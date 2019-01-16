@@ -46,14 +46,14 @@ bool contains_at_least_one_of(InputIterator1 first1, InputIterator1 last1,
 
 enum MIGRATION_TYPE { BOTTOM, TOP };
 enum MODEL_STATE {
-    init = 0,
-    started = 0,
-    finished = 0,
-    ok = 0,
-    stopped = 1,
-    on_error = 2,
-    on_error_too_many_increasing = 3,
-    on_error_no_increasing = 4
+    init,
+    started,
+    finished,
+    ok,
+    stopped,
+    on_error,
+    on_error_too_many_increasing,
+    on_error_no_increasing
 };
 
 const float SLOPE_THRESHOLD = 2.0f;
@@ -181,7 +181,9 @@ Zoltan_Struct *start_unloading_model(std::vector<A> *data_bottom, // becomes bot
         case MODEL_STATE::on_error:
         case MODEL_STATE::on_error_too_many_increasing:
         case MODEL_STATE::on_error_no_increasing:
-        case MODEL_STATE::started | MODEL_STATE::finished | MODEL_STATE::stopped:
+        case MODEL_STATE::started:
+        case MODEL_STATE::finished:
+        case MODEL_STATE::stopped:
             return zz_top;
         default:
             break;
@@ -743,7 +745,7 @@ void migrate(Zoltan_Struct *zoltan_bottom,
  * @param bottom
  */
 template<class A>
-void stop_unloading_model(int current_step, Zoltan_Struct *zoltan_bottom,
+bool stop_unloading_model(int current_step, Zoltan_Struct *zoltan_bottom,
                           Zoltan_Struct *zoltan_top, // both are in the same comm
                           std::vector<A> *bottom_data,
                           std::vector<A> *top_data, // it is always empty for increasing load cpus
@@ -767,13 +769,15 @@ void stop_unloading_model(int current_step, Zoltan_Struct *zoltan_bottom,
         case MODEL_STATE::on_error:
         case MODEL_STATE::on_error_too_many_increasing:
         case MODEL_STATE::finished:
-            return;
+             return false;
         default:
             if ((model_state.started_at_step + model_state.sigma) <= current_step) { //global deletion
                 Zoltan_Destroy(&zoltan_top);
                 std::move(top_data->begin(), top_data->end(), std::back_inserter(*bottom_data));
                 tca::zoltan_load_balance(bottom_data, zoltan_bottom, ENABLE_AUTOMATIC_MIGRATION);
                 model_state.state = MODEL_STATE::finished;
+                std::cout << "stopping model!" << std::endl;
+                return true;
             }
     }
 

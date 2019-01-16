@@ -11,7 +11,7 @@ Y = int(sys.argv[2])
 print X, Y
 max_waiting_time = 0
 max_wtime = []
-
+x = 1/X
 import multiprocessing
 def getMaxFileSize(file):
     print "processing file: ", file
