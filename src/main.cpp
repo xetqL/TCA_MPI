@@ -197,7 +197,6 @@ int main(int argc, char **argv) {
         /*************************************Start parallel exchange********************************************/
         PAR_START_TIMING(comm_time, bottom);
 #if UNLOADING_MODEL > 0
-
         auto remote_data = load_balancing::esoteric::exchange(zz, zztop, &vehicles, &top_vehicles, &recv, &sent, geom, model_state.increasing_cpus, datatype.elements_datatype, bottom, 1.0);
 
 #else
