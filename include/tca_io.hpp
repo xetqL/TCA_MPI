@@ -115,10 +115,14 @@ zz::Image zzframe(const size_t sx, const size_t sy, const std::unordered_map<lon
     for (size_t y = 0; y < sy; y++) {
         for (size_t x = 0; x < sx; x++) {
             auto xy = position_to_cell(sx, sy, x, y);
-            if (exists(vehicle_matrix, xy)) {
-                ret(y, x, 0) = 0;
+            if(ca_matrix.at(xy).crash_maker){
+                ret(y, x, 0) = 255;
                 ret(y, x, 1) = 0;
                 ret(y, x, 2) = 0;
+            } else if (exists(vehicle_matrix, xy)) {
+                    ret(y, x, 0) = 0;
+                    ret(y, x, 1) = 0;
+                    ret(y, x, 2) = 0;
             } else {
                 if(ca_matrix.at(xy).direction != NoDirection){
                     ret(y, x, 0) = 255;

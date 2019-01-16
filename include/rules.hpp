@@ -83,129 +83,6 @@ std::pair<std::pair<int, int>, std::pair<int, int>> get_rotary_neighbors(int msx
     }
 }
 
-namespace deprecated {
-void in_rotary_rule(const Vehicle* vehicle,
-                    const CA_Cell& exit_cell,
-                    const CA_Cell& next_rotary_cell,
-                    const Vehicle* neighbor_vehicle,
-                    std::vector<Vehicle>& vehicles_new,
-                    std::vector<std::vector<Vehicle *>>& vehicles_map_new){
-    int x,y;
-    std::tie(x,y) = next_rotary_cell.position;
-    if(vehicle->rotary_exit_flag) { // get out, if you can
-        if(can_move(exit_cell, neighbor_vehicle, nullptr)) {
-            std::tie(x,y) = exit_cell.position;
-            vehicles_new.emplace_back(vehicle->gid, vehicle->lid, exit_cell, 1);
-            //vehicles_map_new[y][x] = &(*(vehicles_new.end() - 1));
-        } else {
-            vehicles_new.emplace_back(vehicle->gid, vehicle->lid, next_rotary_cell, 1);
-            //vehicles_map_new[y][x] = &(*(vehicles_new.end() - 1));
-        }
-    } else {
-        vehicles_new.emplace_back(vehicle->gid, vehicle->lid, next_rotary_cell, 1);
-        //vehicles_map_new[y][x] = &(*(vehicles_new.end() - 1));
-    }
-}
-
-void in_road_rule(const Vehicle* vehicle,
-                  const CA_Cell& next_cell,
-                  const Vehicle* neighbor_vehicle,
-                  const Vehicle* priority_vehicle,
-                  const std::vector<std::vector<CA_Cell> > &ca_matrix,
-                  const std::vector<std::vector<Vehicle *> > &vehicles_map,
-                  std::vector<Vehicle>& vehicles_new,
-                  std::vector<std::vector<Vehicle *>>& vehicles_map_new) {
-    int x, y;
-    bool priority_vehicle_can_exit_rotary = false;
-    if(next_cell.direction == Rotary && priority_vehicle != nullptr){
-        std::tie(x,y) = priority_vehicle->position;
-        std::pair<int,int> exit, next; std::tie(exit, next) = get_rotary_neighbors(x, y, ca_matrix);
-        //priority_vehicle_can_exit_rotary = vehicles_map[exit.second][exit.first] == nullptr;
-    }
-
-    if(can_move(next_cell, neighbor_vehicle, priority_vehicle, priority_vehicle_can_exit_rotary)) { //
-        std::tie(x, y) = next_cell.position;
-    }else {
-        std::tie(x, y) = vehicle->position;
-    }
-    vehicles_new.emplace_back(vehicle->gid, vehicle->lid, x, y, 1);
-    //vehicles_map_new[y][x] = &(*(vehicles_new.end() - 1));
-}
-
-
-inline void apply_rule184(const int msx, const int msy,
-                          const std::vector<std::vector<CA_Cell> > &ca_matrix,
-                          const Vehicle &vehicle,
-                          const std::vector<std::vector<Vehicle *> > &vehicles_map,
-                          std::vector<Vehicle>& vehicles_new, std::vector<std::vector<Vehicle *>>& vehicles_map_new){
-    int x, y;
-    std::tie(x, y) = vehicle.position;
-    CA_Cell Ni = ca_matrix.at(y).at(x);
-    auto D = Ni.direction;
-    switch (D) {
-        case GoingRight: {
-            if (x + 1 == msx) { // deletion at boundary, if parallel, ask neighbor
-                // vehicles_map_new[y][x] = nullptr;
-                x = -1;
-            }   // else
-            {
-                auto next_cell = ca_matrix.at(y).at(x + 1); auto next_vehicle = vehicles_map.at(y).at(x + 1);
-                auto priority_vehicle = vehicles_map.at(y - 1).at(x + 1);
-                in_road_rule(&vehicle, next_cell, next_vehicle, priority_vehicle, ca_matrix, vehicles_map, vehicles_new, vehicles_map_new);
-            }
-        }
-            break;
-        case GoingLeft: {
-            if (x == 0) { // deletion at boundary, if parallel, ask neighbor
-                // vehicles_map_new[y][x] = nullptr;
-                x = msx;
-            }   // else
-            {
-                auto next_vehicle = vehicles_map.at(y).at(x - 1); auto next_cell = ca_matrix.at(y).at(x - 1);
-                auto priority_vehicle = vehicles_map.at(y + 1).at(x -1);
-                in_road_rule(&vehicle, next_cell, next_vehicle, priority_vehicle, ca_matrix, vehicles_map,vehicles_new, vehicles_map_new);
-            }
-        }
-            break;
-        case GoingUp: {
-            if (y == 0) { // deletion at boundary, if parallel, ask neighbor
-                // vehicles_map_new[y][x] = nullptr;
-                y = msy;
-            }   // else
-            {
-                auto next_vehicle = vehicles_map.at(y - 1).at(x); auto next_cell = ca_matrix.at(y - 1).at(x);
-                auto priority_vehicle = vehicles_map.at(y - 1).at(x - 1);
-                in_road_rule(&vehicle, next_cell, next_vehicle, priority_vehicle, ca_matrix, vehicles_map, vehicles_new, vehicles_map_new);
-            }
-        }
-            break;
-        case GoingDown: {
-            if (y + 1 == msy) { // deletion at boundary, if parallel, ask neighbor
-                // vehicles_map_new[y][x] = nullptr;
-                y = -1;
-            }   // else
-            {
-                auto next_vehicle = vehicles_map.at(y + 1).at(x); auto next_cell = ca_matrix.at(y + 1).at(x);
-                auto priority_vehicle = vehicles_map.at(y + 1).at(x + 1);
-                in_road_rule(&vehicle, next_cell, next_vehicle, priority_vehicle, ca_matrix, vehicles_map, vehicles_new, vehicles_map_new);
-            }
-        }
-            break;
-        case Rotary: { // von neumann neighborhood
-            std::pair<int,int> exit, next; std::tie(exit, next) = get_rotary_neighbors(x, y, ca_matrix);
-
-            auto exit_cell    = ca_matrix.at(exit.second).at(exit.first);
-            auto next_cell    = ca_matrix.at(next.second).at(next.first);
-            auto exit_vehicle = vehicles_map.at(exit.second).at(exit.first);
-
-            in_rotary_rule(&vehicle, exit_cell, next_cell, exit_vehicle, vehicles_new, vehicles_map_new);
-
-        }
-            break;
-    }
-}
-
-}
 namespace sequential {
 void in_rotary_rule(const int msx, const int msy,
                     const Vehicle* vehicle,
@@ -348,7 +225,7 @@ inline void apply_rule184(const int msx, const int msy,
             break;
     }
 }
-}
+} //end of namespace: sequential
 namespace parallel {
 void in_road_rule(const int msx, const int msy,
                   const Vehicle* vehicle,
@@ -369,19 +246,21 @@ void in_road_rule(const int msx, const int msy,
                 !exists(vehicles_map, position_to_cell(msx, msy, exit)) &&
                 !exists(vehicles_map_remote, position_to_cell(msx, msy, exit));
         //priority_vehicle_can_exit_rotary = !exists(vehicles_map, position_to_cell(msx, msy, next));
-
     }
+
     std::pair<int,int> p;
     int waiting_time = 0;
-    if(can_move(next_cell, neighbor_vehicle, priority_vehicle, priority_vehicle_can_exit_rotary)) { //
-        p = next_cell.position;
-    }else {
+    std::tie(x, y) = vehicle->position;
+    long long xy = position_to_cell(msx, msy, x, y);
+    if(ca_matrix.at(xy).crash_maker || !can_move(next_cell, neighbor_vehicle, priority_vehicle, priority_vehicle_can_exit_rotary)){
+        if(ca_matrix.at(xy).crash_maker ) std::cout << "cannot move because of accident " << *vehicle <<std::endl;
         p = vehicle->position;
         waiting_time = vehicle->waiting_time+1;
-    }
-    std::tie(x,y) = p;
+    } else p = next_cell.position;
+
+    std::tie(x, y) = p;
     // << "From (" << vehicle->position.first << "," << vehicle->position.second << ") to " << "(" << x << "," << y << ")" << std::endl;
-    long long xy = position_to_cell(msx, msy, x, y);
+    xy = position_to_cell(msx, msy, x, y);
     vehicles_map_new[xy] = Vehicle(vehicle->gid, vehicle->lid, x, y, 1);
     vehicles_map_new[xy].waiting_time = waiting_time;
 }
@@ -398,6 +277,7 @@ void apply_rule184(const int msx, const int msy,
     long long xy = position_to_cell(msx, msy, x, y);
     CA_Cell Ni = ca_matrix.at(xy);
     auto D = Ni.direction;
+
     switch (D) {
         case GoingRight: {
             if (x + 1 == msx) { // deletion at boundary, if parallel, ask neighbor

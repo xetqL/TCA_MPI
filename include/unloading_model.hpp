@@ -194,8 +194,7 @@ Zoltan_Struct *start_unloading_model(std::vector<A> *data_bottom, // becomes bot
     if (!in_top_partition)
         top_mesh_data = *data_bottom;
 
-    zz_top = zoltan_create_wrapper(ENABLE_AUTOMATIC_MIGRATION, bottom, bottom_size - increasing_cpus.size(),
-                                   in_top_partition ? 1 : 0);
+    zz_top = zoltan_create_wrapper(ENABLE_AUTOMATIC_MIGRATION, bottom, bottom_size - increasing_cpus.size(), in_top_partition ? 1 : 0);
     tca::zoltan_load_balance(&top_mesh_data, zz_top, ENABLE_AUTOMATIC_MIGRATION);
 
     if (in_top_partition) {
@@ -769,18 +768,17 @@ bool stop_unloading_model(int current_step, Zoltan_Struct *zoltan_bottom,
         case MODEL_STATE::on_error:
         case MODEL_STATE::on_error_too_many_increasing:
         case MODEL_STATE::finished:
-             return false;
+             break;
         default:
             if ((model_state.started_at_step + model_state.sigma) <= current_step) { //global deletion
                 Zoltan_Destroy(&zoltan_top);
                 std::move(top_data->begin(), top_data->end(), std::back_inserter(*bottom_data));
                 tca::zoltan_load_balance(bottom_data, zoltan_bottom, ENABLE_AUTOMATIC_MIGRATION);
                 model_state.state = MODEL_STATE::finished;
-                std::cout << "stopping model!" << std::endl;
                 return true;
             }
     }
-
+    return false;
 }
 
 } // end of namespace esoteric

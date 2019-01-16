@@ -45,25 +45,9 @@ using namespace std;
 using namespace tca;
 ///TODO: Colormap as function of waiting time
 ///Parse data afterward
+
 #define UNLOADING_MODEL 1
-std::tuple<std::vector<Vehicle>, vector<vector<Vehicle *> > > update(const int msx, const int msy,
-                                                                     const vector<vector<CA_Cell> > &ca_matrix,
-                                                                     const std::vector<Vehicle> &vehicles,
-                                                                     const vector<vector<Vehicle *> > &vehicles_map) {
-    std::vector<Vehicle> vehicles_new;
-    vector<vector<Vehicle *> > vehicles_map_new(msy, std::vector<Vehicle *>(msx, nullptr));
-    for (const Vehicle &v : vehicles) {
-        deprecated::apply_rule184(msx, msy, ca_matrix, v, vehicles_map, vehicles_new, vehicles_map_new);
-    }
 
-    for(auto& v : vehicles_new) {
-        int x,y; std::tie(x,y) = v.position;
-        std::cout << v << std::endl;
-        vehicles_map_new[y][x] = &v;
-    }
-
-    return std::make_tuple(vehicles_new, vehicles_map_new);
-}
 
 unordered_map<long long, Vehicle> update(const int msx, const int msy,
                                          const unordered_map<long long,  CA_Cell> &ca_matrix,
@@ -107,6 +91,7 @@ void generate_vehicles(const int step, const int my_rank,
                        const int msx, const int msy, Zoltan_Struct* zz,
                        const unordered_map<long long,  CA_Cell> &ca_matrix,
                              unordered_map<long long,  Vehicle> *_vehicles_map) {
+    int wsize; MPI_Comm_size(MPI_COMM_WORLD, &wsize);
     auto& vehicles_map = *_vehicles_map;
     std::vector<std::pair<long long, CA_Cell>> cells;
     CA_Cell c;
@@ -127,11 +112,12 @@ void generate_vehicles(const int step, const int my_rank,
     //add new vehicles
     std::array<double, 2> pos = {0, 0};
     int PE;
+    int id = 0;
     for (auto &cell : cells) {
         std::tie(pos[0], pos[1]) = cell_to_position(msx, msy, cell.first);
         Zoltan_LB_Point_Assign(zz, &pos.front(), &PE);
         if(my_rank == PE && !exists(vehicles_map, cell.first) && cell.second.has_to_generate(step)) {
-            vehicles_map[cell.first] = Vehicle(1, vehicles_map.size() + 1, (int) pos[0], (int) pos[1], 1);
+            vehicles_map[cell.first] = Vehicle(msx*msy+step*(cells.size()*wsize)+id+my_rank*cells.size(), vehicles_map.size() + 1, (int) pos[0], (int) pos[1], 1);
         }
     }
 }
@@ -153,9 +139,10 @@ int main(int argc, char **argv) {
 
     SIZE_X = std::atoi(argv[3]);
     SIZE_Y = std::atoi(argv[4]);
+    const int MAX_VC = SIZE_X*SIZE_Y;
     std::tie(ca_matrix, std::ignore, road_y_pos) = generate_random_manhattan(SIZE_X, SIZE_Y);
 
-    create_random_left_sources(3, SIZE_X, SIZE_Y, road_y_pos, &ca_matrix);
+    create_random_left_sources(10, SIZE_X, SIZE_Y, road_y_pos, &ca_matrix);
 
     if(!rank) std::cout << "End of map generation\nStarting computations..." << std::endl;
 
@@ -169,31 +156,33 @@ int main(int argc, char **argv) {
     if(!rank) std::cout << vehicles.size() << std::endl;
 
     if(!rank){
+
         auto img = zzframe( SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix);
         img.save("out0.jpg");
     }
     auto zz = zoltan_create_wrapper(ENABLE_AUTOMATIC_MIGRATION, MPI_COMM_WORLD);
 
     zoltan_load_balance(&vehicles, zz, ENABLE_AUTOMATIC_MIGRATION);
+    auto geom = get_geometry_from_vehicles(rank, zz, vehicles, SIZE_X, SIZE_Y);
 
     std::vector<Vehicle> top_vehicles;
 
 #if UNLOADING_MODEL > 0
     if(!rank) std::cout << "UNLOADING MODEL APPLIED" << std::endl;
-    auto geom = get_geometry_from_vehicles(rank, zz, vehicles, SIZE_X, SIZE_Y);
     double slope = rank == 0 ? 2 : 0.0;
     auto model_state = load_balancing::esoteric::init_unloading_model(0, slope, rank, vehicles, bottom);
-    if(model_state.state != load_balancing::esoteric::MODEL_STATE::init) std::cout << "no esoteric call" << std::endl;
-    else if(!rank) std::cout << "Next call in " << model_state.sigma << "iterations "<<std::endl;
+    if(model_state.state != load_balancing::esoteric::MODEL_STATE::init) {
+        std::cout << "no esoteric call" << std::endl;
+    } else if(!rank) {
+        set_crash_maker_on_out_roads(true, SIZE_X, SIZE_Y, geom, &ca_matrix);
+
+        std::cout << rank << " Next call in " << model_state.sigma << "iterations "<<std::endl;
+    }
     auto zztop = load_balancing::esoteric::start_unloading_model(&vehicles , &top_vehicles, model_state, datatype.elements_datatype, bottom);
 #endif
-
     int step = 0;
-
     while (step < MAX_STEP) {
-
         if(model_state.state == load_balancing::esoteric::MODEL_STATE::finished) {
-
             model_state = load_balancing::esoteric::init_unloading_model(step, slope, rank, vehicles, bottom);
             zztop = load_balancing::esoteric::start_unloading_model(&vehicles , &top_vehicles, model_state, datatype.elements_datatype, bottom);
             if(!rank) {
@@ -208,6 +197,7 @@ int main(int argc, char **argv) {
         PAR_START_TIMING(comm_time, bottom);
 #if UNLOADING_MODEL > 0
         auto remote_data = load_balancing::esoteric::exchange(zz, zztop, &vehicles, &top_vehicles, &recv, &sent, geom, model_state.increasing_cpus, datatype.elements_datatype, bottom, 1.0);
+
 #else
         auto remote_data =  zoltan_exchange_data(zz, &vehicles, &recv, &sent, datatype.elements_datatype, bottom,  1.2);
 #endif
@@ -224,6 +214,7 @@ int main(int argc, char **argv) {
         generate_vehicles(step, rank, SIZE_X, SIZE_Y, zz, ca_matrix, &updated_vehicle_matrix1);
         vehicles     = to_vec(updated_vehicle_matrix1);
         top_vehicles = to_vec(updated_vehicle_matrix2);
+
         PAR_STOP_TIMING(computation_time, bottom);
 
         // Stop parallel computation
@@ -231,6 +222,7 @@ int main(int argc, char **argv) {
         PAR_START_TIMING(migrate_time, bottom);
 #if UNLOADING_MODEL > 0
         load_balancing::esoteric::migrate(zz, zztop, &vehicles, &top_vehicles, model_state.increasing_cpus, datatype.elements_datatype, bottom);
+
 #else
         zoltan_migrate_particles(zz, &vehicles, datatype.elements_datatype, bottom);
         zoltan_load_balance(&vehicles, zz, ENABLE_AUTOMATIC_MIGRATION);
@@ -239,8 +231,12 @@ int main(int argc, char **argv) {
         // Stop load balancing and migration
 #if UNLOADING_MODEL > 0
         auto model_stopped = load_balancing::esoteric::stop_unloading_model(step, zz, zztop, &vehicles, &top_vehicles, model_state, bottom);
-        if(model_stopped)
-            zoltan_load_balance(&vehicles, zz, ENABLE_AUTOMATIC_MIGRATION);
+        if(model_stopped) {
+        //    zoltan_load_balance(&vehicles, zz, ENABLE_AUTOMATIC_MIGRATION);
+        }
+
+
+
 #endif
         MPI_Barrier(bottom);
         PAR_STOP_TIMING(step_time, bottom);
@@ -267,7 +263,7 @@ int main(int argc, char **argv) {
             step_str = std::string(std::to_string(MAX_STEP).length() - step_str.length(), '0') + step_str;
             out.open(step_str+"_waiting_time.txt", std::ofstream::out);
             print_vehicles(out, all_vehicles);
-            //img.save(( step_str+prefix_fname).c_str());
+            img.save(( step_str+prefix_fname).c_str());
             out.close();
         }
         // Stop printing

@@ -236,6 +236,7 @@ std::tuple<std::unordered_map<long long, CA_Cell>, std::vector<int>, std::vector
 void create_random_left_sources(int n, const size_t SIZE_X, const size_t SIZE_Y, std::vector<int> left, std::unordered_map<long long, CA_Cell> *ca_matrix) {
     const int X = 0;
     std::random_shuffle(left.begin(), left.end());
+    n = n > left.size() ? left.size() : n;
     for(; n > 0; n--) {
         const int Y = left[n-1]+1;
         const long long xy = position_to_cell(SIZE_X, SIZE_Y, X, Y);
@@ -243,7 +244,8 @@ void create_random_left_sources(int n, const size_t SIZE_X, const size_t SIZE_Y,
     }
 }
 
-std::tuple<int, int, int, int> get_geometry_from_vehicles(int rank, Zoltan_Struct* zz, const std::unordered_map<long long, Vehicle>& my_vehicles, const size_t SIZE_X, const size_t SIZE_Y) {
+std::tuple<int, int, int, int> get_geometry_from_vehicles(
+        int rank, Zoltan_Struct* zz, const std::unordered_map<long long, Vehicle>& my_vehicles, const size_t SIZE_X, const size_t SIZE_Y) {
     int x, y, minx= SIZE_X, miny = SIZE_Y, maxx=-1,maxy=-1;
     //create boundaries from vehicles
     for(const auto& v : my_vehicles) {
@@ -285,7 +287,10 @@ std::tuple<int, int, int, int> get_geometry_from_vehicles(int rank, Zoltan_Struc
 
     return std::make_tuple(minx, maxx, miny, maxy);
 }
-std::tuple<int, int, int, int> get_geometry_from_vehicles(int rank, Zoltan_Struct* zz, const std::vector<Vehicle>& my_vehicles, const size_t SIZE_X, const size_t SIZE_Y) {
+std::tuple<int, int, int, int> get_geometry_from_vehicles(
+                    int rank, Zoltan_Struct* zz,
+                    const std::vector<Vehicle>& my_vehicles,
+                    const size_t SIZE_X, const size_t SIZE_Y) {
     int x, y, minx= SIZE_X, miny = SIZE_Y, maxx=-1,maxy=-1;
     //create boundaries from vehicles
     for(const auto& v : my_vehicles) {
@@ -333,4 +338,85 @@ inline bool inside_the_borders(const Vehicle& vehicle, const std::tuple<int, int
            (vehicle.position.second <= std::get<2>(my_area)+border_size)|| (std::get<3>(my_area)-border_size <= vehicle.position.second);
 }
 
+
+void set_crash_maker_on_out_roads(bool crash, const size_t SIZE_X, const size_t SIZE_Y, const std::tuple<int, int, int, int>& geom,
+        std::unordered_map<long long, CA_Cell>* _ca_matrix){
+    std::unordered_map<long long, CA_Cell>& ca_matrix = *(_ca_matrix);
+    int minx,maxx, miny,maxy; std::tie(minx,maxx, miny,maxy) = geom;
+    int X, Y;
+
+    Y=miny+1;
+    for(X = minx; X < maxx; ++X) {
+        const long long xy = position_to_cell(SIZE_X, SIZE_Y, X, Y);
+        auto& cell = ca_matrix.at(xy);
+        if(cell.direction == GoingUp)
+            cell.crash_maker = crash;
+        else if (cell.direction == Rotary) {
+            int tmp_Y = Y;
+            CA_Cell *tmp_cell;
+            do {
+                tmp_Y++;
+                const long long xy = position_to_cell(SIZE_X, SIZE_Y, X, tmp_Y);
+                tmp_cell = &ca_matrix.at(xy);
+
+            } while(tmp_cell->direction == Rotary);
+            if(tmp_cell->direction == GoingUp) tmp_cell->crash_maker = crash;
+        }
+    }
+    Y=maxy-1;
+    for(X = minx; X < maxx; ++X) {
+        const long long xy = position_to_cell(SIZE_X, SIZE_Y, X, Y);
+        auto& cell = ca_matrix.at(xy);
+        if(cell.direction == GoingDown)
+            cell.crash_maker = crash;
+        else if (cell.direction == Rotary) {
+            int tmp_Y = Y;
+            CA_Cell *tmp_cell;
+            do {
+                tmp_Y--;
+
+                const long long xy = position_to_cell(SIZE_X, SIZE_Y, X, tmp_Y);
+                tmp_cell = &ca_matrix.at(xy);
+            } while(tmp_cell->direction == Rotary);
+            if(tmp_cell->direction == GoingDown)  tmp_cell->crash_maker = crash;
+        }
+    }
+
+    X=minx+1;
+    for(Y = miny; Y < maxy; ++Y) {
+        const long long xy = position_to_cell(SIZE_X, SIZE_Y, X, Y);
+        auto& cell = ca_matrix.at(xy);
+        if(cell.direction == GoingLeft)
+            cell.crash_maker = crash;
+        else if (cell.direction == Rotary) {
+            int tmp_X = X;
+            CA_Cell *tmp_cell;
+            do {
+                tmp_X++;
+                const long long xy = position_to_cell(SIZE_X, SIZE_Y, tmp_X, Y);
+                tmp_cell = &ca_matrix.at(xy);
+            } while(tmp_cell->direction == Rotary);
+
+            if(tmp_cell->direction == GoingLeft) tmp_cell->crash_maker = crash;
+        }
+    }
+
+    X=maxx-1;
+    for(Y = miny; Y < maxy; ++Y) {
+        const long long xy = position_to_cell(SIZE_X, SIZE_Y, X, Y);
+        auto& cell = ca_matrix.at(xy);
+        if(cell.direction == GoingRight)
+            cell.crash_maker = crash;
+        else if (cell.direction == Rotary) {
+            int tmp_X = X;
+            CA_Cell *tmp_cell;
+            do {
+                tmp_X--;
+                const long long xy = position_to_cell(SIZE_X, SIZE_Y, tmp_X, Y);
+                tmp_cell = &ca_matrix.at(xy);
+            } while(tmp_cell->direction == Rotary);
+            if(tmp_cell->direction == GoingRight) tmp_cell->crash_maker = crash;
+        }
+    }
+}
 #endif //CA_ROAD_TCA_UTILS_HPP

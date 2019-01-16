@@ -13,6 +13,7 @@ struct CA_Cell {
     std::pair<int,int> position;
     bool source = false;
     mutable int PROBABILITY_GENERATE = rand() % 100;
+    bool crash_maker = false;
 
     CA_Cell() = default;
     CA_Cell(char c) : direction(char_to_driving(c)) {}
