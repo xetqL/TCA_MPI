@@ -252,8 +252,8 @@ void in_road_rule(const int msx, const int msy,
     int waiting_time = 0;
     std::tie(x, y) = vehicle->position;
     long long xy = position_to_cell(msx, msy, x, y);
-    if(ca_matrix.at(xy).crash_maker || !can_move(next_cell, neighbor_vehicle, priority_vehicle, priority_vehicle_can_exit_rotary)){
-        if(ca_matrix.at(xy).crash_maker ) std::cout << "cannot move because of accident " << *vehicle <<std::endl;
+    float speed = vehicle->speed;
+    if(speed <= 0 || !can_move(next_cell, neighbor_vehicle, priority_vehicle, priority_vehicle_can_exit_rotary)){
         p = vehicle->position;
         waiting_time = vehicle->waiting_time+1;
     } else p = next_cell.position;
@@ -261,7 +261,7 @@ void in_road_rule(const int msx, const int msy,
     std::tie(x, y) = p;
     // << "From (" << vehicle->position.first << "," << vehicle->position.second << ") to " << "(" << x << "," << y << ")" << std::endl;
     xy = position_to_cell(msx, msy, x, y);
-    vehicles_map_new[xy] = Vehicle(vehicle->gid, vehicle->lid, x, y, 1);
+    vehicles_map_new[xy] = Vehicle(vehicle->gid, vehicle->lid, x, y, speed);
     vehicles_map_new[xy].waiting_time = waiting_time;
 }
 
@@ -278,14 +278,17 @@ void apply_rule184(const int msx, const int msy,
     CA_Cell Ni = ca_matrix.at(xy);
     auto D = Ni.direction;
 
+    //std::cout << "Speed: "<< vehicle.speed << std::endl;
+    int vspeed = (int) vehicle.speed;
+    if(Ni.crash_maker) vspeed = 0;
     switch (D) {
         case GoingRight: {
-            if (x + 1 == msx) { // deletion at boundary, if parallel, ask neighbor
+            if (x + vspeed >= msx) { // deletion at boundary, if parallel, ask neighbor
                 //vehicles_map_new[y][x] = nullptr;
                 break;
                 //x = -1;
             }
-            xy = position_to_cell(msx, msy, x+1, y);
+            xy = position_to_cell(msx, msy, x + vspeed, y);
             auto next_cell = ca_matrix.at(xy); //will always be ok.
             const Vehicle* next_vehicle = get_ptr_vehicle(vehicles_map, vehicles_map_remote, xy);
             //auto next_vehicle = next_vehicle_iterator != vehicles_map_remote.end()? : &(*next_vehicle_iterator) : nullptr;
@@ -298,13 +301,13 @@ void apply_rule184(const int msx, const int msy,
             break;
         case GoingLeft: {
 
-            if (x == 0) { // deletion at boundary, if parallel, ask neighbor
+            if (x-vspeed < 0) { // deletion at boundary, if parallel, ask neighbor
                 //vehicles_map_new[y][x] = nullptr;
 
                 break; x = msx;
             }
 
-            xy = position_to_cell(msx, msy, x-1, y);
+            xy = position_to_cell(msx, msy, x-vspeed, y);
             auto next_cell = ca_matrix.at(xy);
             const Vehicle* next_vehicle = get_ptr_vehicle(vehicles_map, vehicles_map_remote, xy);
             xy = position_to_cell(msx, msy, x-1, y+1);
@@ -315,12 +318,12 @@ void apply_rule184(const int msx, const int msy,
             break;
         case GoingUp: {
 
-            if (y == 0) { // deletion at boundary, if parallel, ask neighbor
+            if (y-vspeed < 0) { // deletion at boundary, if parallel, ask neighbor
                 //vehicles_map_new[y][x] = nullptr;
                 break; y = msy;
             }
 
-            xy = position_to_cell(msx, msy, x, y - 1 == -1 ? msy : y - 1);
+            xy = position_to_cell(msx, msy, x, y - vspeed);
             auto next_cell = ca_matrix.at(xy);
             const Vehicle* next_vehicle = get_ptr_vehicle(vehicles_map, vehicles_map_remote, xy);
             xy = position_to_cell(msx, msy, x-1 == -1 ? msx : x - 1, y - 1 == -1 ? msy : y - 1);
@@ -330,9 +333,8 @@ void apply_rule184(const int msx, const int msy,
         }
             break;
         case GoingDown: {
-            if(y+1 == msy) break;
-
-            xy = position_to_cell(msx, msy, x, y + 1 == msy ? 0 : y+1);
+            if(y+vspeed >= msy) break;
+            xy = position_to_cell(msx, msy, x, y + vspeed);
             auto next_cell = ca_matrix.at(xy);
             const Vehicle* next_vehicle = get_ptr_vehicle(vehicles_map, vehicles_map_remote, xy);
             xy = position_to_cell(msx, msy, x+1 == msx ? 0 : x+1, y+1 == msy ? 0 : y+1);

@@ -100,7 +100,7 @@ void randomize_cars_position(size_t sx, size_t sy, const std::unordered_map<long
     for (size_t y = 0; y < sy; y++) {
         for (size_t x = 0; x < sx; x++) {
             if (ca_matrix.at(position_to_cell(sx, sy, x, y)).direction != NoDirection) {
-                if (rand() % 100 > 50) {
+                if (rand() % 100 > 85) {
                     vehicle_matrix[position_to_cell(sx, sy, x, y)] = Vehicle(gid, gid, x, y, 1);
                     gid++;
                 }
@@ -298,6 +298,8 @@ std::tuple<int, int, int, int> get_geometry_from_vehicles(
         minx = std::min(x, minx); miny = std::min(y, miny);
         maxx = std::max(x, maxx); maxy = std::max(y, maxy);
     }
+    std::cout << rank << " " << minx << " "<< maxx << " "<< miny << " "<< maxy << std::endl;
+
     //then grow from those boundaries to the edges of my own area
     //using linear search (but maybe, binary search could provide better perf.) TODO: test with binary search
     int PE, part;
@@ -313,7 +315,7 @@ std::tuple<int, int, int, int> get_geometry_from_vehicles(
         pos_in_double = {(double) minx, (double) i};
         Zoltan_LB_Point_PP_Assign(zz, &pos_in_double.front(), &PE, &part);
         if(PE == rank) // my point
-            minx = i;
+            miny = i;
     }
 
     for(int i = maxx; i < SIZE_X; ++i) {
@@ -327,7 +329,7 @@ std::tuple<int, int, int, int> get_geometry_from_vehicles(
         pos_in_double = {(double) maxx, (double) i};
         Zoltan_LB_Point_PP_Assign(zz, &pos_in_double.front(), &PE, &part);
         if(PE == rank) // my point
-            maxx = i;
+            maxy = i;
     }
 
     return std::make_tuple(minx, maxx, miny, maxy);
@@ -339,18 +341,22 @@ inline bool inside_the_borders(const Vehicle& vehicle, const std::tuple<int, int
 }
 
 
-void set_crash_maker_on_out_roads(bool crash, const size_t SIZE_X, const size_t SIZE_Y, const std::tuple<int, int, int, int>& geom,
+std::vector<int> set_crash_maker_on_out_roads(bool crash, const size_t SIZE_X, const size_t SIZE_Y, const std::tuple<int, int, int, int>& geom,
         std::unordered_map<long long, CA_Cell>* _ca_matrix){
     std::unordered_map<long long, CA_Cell>& ca_matrix = *(_ca_matrix);
     int minx,maxx, miny,maxy; std::tie(minx,maxx, miny,maxy) = geom;
     int X, Y;
-
-    Y=miny+1;
+    std::vector<int> crash_positions;
+    Y=miny;
     for(X = minx; X < maxx; ++X) {
         const long long xy = position_to_cell(SIZE_X, SIZE_Y, X, Y);
         auto& cell = ca_matrix.at(xy);
         if(cell.direction == GoingUp)
+        {
             cell.crash_maker = crash;
+            crash_positions.push_back(X); crash_positions.push_back(Y);
+
+        }
         else if (cell.direction == Rotary) {
             int tmp_Y = Y;
             CA_Cell *tmp_cell;
@@ -361,33 +367,42 @@ void set_crash_maker_on_out_roads(bool crash, const size_t SIZE_X, const size_t 
 
             } while(tmp_cell->direction == Rotary);
             if(tmp_cell->direction == GoingUp) tmp_cell->crash_maker = crash;
+            crash_positions.push_back(X); crash_positions.push_back(tmp_Y);
+
         }
     }
-    Y=maxy-1;
+    Y=maxy;
     for(X = minx; X < maxx; ++X) {
         const long long xy = position_to_cell(SIZE_X, SIZE_Y, X, Y);
         auto& cell = ca_matrix.at(xy);
         if(cell.direction == GoingDown)
+        {
             cell.crash_maker = crash;
+            crash_positions.push_back(X); crash_positions.push_back(Y);
+
+        }
         else if (cell.direction == Rotary) {
             int tmp_Y = Y;
             CA_Cell *tmp_cell;
             do {
                 tmp_Y--;
-
                 const long long xy = position_to_cell(SIZE_X, SIZE_Y, X, tmp_Y);
                 tmp_cell = &ca_matrix.at(xy);
             } while(tmp_cell->direction == Rotary);
             if(tmp_cell->direction == GoingDown)  tmp_cell->crash_maker = crash;
+            crash_positions.push_back(X); crash_positions.push_back(tmp_Y);
+
         }
     }
 
-    X=minx+1;
+    X=minx;
     for(Y = miny; Y < maxy; ++Y) {
         const long long xy = position_to_cell(SIZE_X, SIZE_Y, X, Y);
         auto& cell = ca_matrix.at(xy);
-        if(cell.direction == GoingLeft)
+        if(cell.direction == GoingLeft){
             cell.crash_maker = crash;
+            crash_positions.push_back(X); crash_positions.push_back(Y);
+        }
         else if (cell.direction == Rotary) {
             int tmp_X = X;
             CA_Cell *tmp_cell;
@@ -397,17 +412,23 @@ void set_crash_maker_on_out_roads(bool crash, const size_t SIZE_X, const size_t 
                 tmp_cell = &ca_matrix.at(xy);
             } while(tmp_cell->direction == Rotary);
 
-            if(tmp_cell->direction == GoingLeft) tmp_cell->crash_maker = crash;
+            if(tmp_cell->direction == GoingLeft) {
+                tmp_cell->crash_maker = crash;
+                crash_positions.push_back(tmp_X); crash_positions.push_back(Y);
+            }
         }
     }
 
-    X=maxx-1;
+    X=maxx;
     for(Y = miny; Y < maxy; ++Y) {
         const long long xy = position_to_cell(SIZE_X, SIZE_Y, X, Y);
         auto& cell = ca_matrix.at(xy);
-        if(cell.direction == GoingRight)
+
+
+        if(cell.direction == GoingRight){
             cell.crash_maker = crash;
-        else if (cell.direction == Rotary) {
+            crash_positions.push_back(X); crash_positions.push_back(Y);
+        } else if (cell.direction == Rotary) {
             int tmp_X = X;
             CA_Cell *tmp_cell;
             do {
@@ -415,8 +436,39 @@ void set_crash_maker_on_out_roads(bool crash, const size_t SIZE_X, const size_t 
                 const long long xy = position_to_cell(SIZE_X, SIZE_Y, tmp_X, Y);
                 tmp_cell = &ca_matrix.at(xy);
             } while(tmp_cell->direction == Rotary);
-            if(tmp_cell->direction == GoingRight) tmp_cell->crash_maker = crash;
+            if(tmp_cell->direction == GoingRight) {
+                tmp_cell->crash_maker = crash;
+                crash_positions.push_back(tmp_X); crash_positions.push_back(Y);
+            }
         }
+
     }
+    return crash_positions;
+}
+
+void update_crash_positions(int rank, int SIZE_X, int SIZE_Y, const std::vector<int>& my_crash_pos,
+                            std::unordered_map<long long, CA_Cell>* _ca_matrix, MPI_Comm comm) {
+    std::unordered_map<long long, CA_Cell>& ca_matrix = *(_ca_matrix);
+    int wsize; MPI_Comm_size(comm, &wsize);
+    const int nb_crash = my_crash_pos.size();
+    std::vector<int> all_crashes(wsize, 0), displ(wsize), rcv_buf;
+    std::cout << nb_crash << std::endl;
+
+    MPI_Allgather(&nb_crash, 1, MPI_INT, &all_crashes.front(), 1, MPI_INT, comm);
+
+    for(int idx = 0; idx < (wsize-1); ++idx) {
+        int cnt = all_crashes[idx];
+        displ[idx+1] = displ[idx]+cnt;
+    }
+
+    auto count = std::accumulate(all_crashes.begin(), all_crashes.end(), 0);
+    rcv_buf.resize(count);
+    MPI_Allgatherv(&my_crash_pos.front(), nb_crash, MPI_INT, &rcv_buf.front(), &all_crashes.front(), &displ.front(), MPI_INT, comm);
+    for(int idx = 0; idx < count; idx+=2) {
+        int X = rcv_buf[idx], Y=rcv_buf[idx+1];
+        auto xy = position_to_cell(SIZE_X, SIZE_Y, X, Y);
+        ca_matrix[xy].crash_maker = true;
+    }
+
 }
 #endif //CA_ROAD_TCA_UTILS_HPP

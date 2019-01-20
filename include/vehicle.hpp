@@ -17,9 +17,9 @@ struct Vehicle {
     int rotary_exit_flag;
     int waiting_time = 0;
     std::pair<int, int> position;
-    float speed;
+    float speed = 1;
 
-    Vehicle(): gid(-1), lid(-1), rotary_exit_flag(0), position(std::make_pair(-1, -1)),  speed(0) {}
+    Vehicle(): gid(-1), lid(-1), rotary_exit_flag(0), position(std::make_pair(-1, -1)),  speed(1) {}
     Vehicle(int gid, int lid, int x, int y, float speed) : gid(gid), lid(lid), rotary_exit_flag(rand() % 100 < PROBABILITY_EXIT), position(std::make_pair(x, y)),  speed(speed) {}
     Vehicle(int gid, int lid, std::pair<int, int> pos, float speed) : gid(gid), lid(lid), rotary_exit_flag(rand() % 100 < PROBABILITY_EXIT), position(std::move(pos)),  speed(speed) {}
     Vehicle(int gid, int lid, CA_Cell& c, float speed) : gid(gid), lid(lid), rotary_exit_flag(rand() % 100 < PROBABILITY_EXIT), position(c.position),  speed(speed) {}

@@ -172,11 +172,6 @@ Zoltan_Struct *start_unloading_model(std::vector<A> *data_bottom, // becomes bot
     const std::vector<int> &increasing_cpus = model_state.increasing_cpus;
     Zoltan_Struct *zz_top = nullptr;
 
-    int bottom_rank;
-    MPI_Comm_rank(bottom, &bottom_rank);
-    int bottom_size;
-    MPI_Comm_size(bottom, &bottom_size);
-
     switch (model_state.state) {
         case MODEL_STATE::on_error:
         case MODEL_STATE::on_error_too_many_increasing:
@@ -188,6 +183,11 @@ Zoltan_Struct *start_unloading_model(std::vector<A> *data_bottom, // becomes bot
         default:
             break;
     }
+
+    int bottom_rank;
+    MPI_Comm_rank(bottom, &bottom_rank);
+    int bottom_size;
+    MPI_Comm_size(bottom, &bottom_size);
 
     const bool in_top_partition =
             std::find(increasing_cpus.cbegin(), increasing_cpus.cend(), bottom_rank) == increasing_cpus.cend();
