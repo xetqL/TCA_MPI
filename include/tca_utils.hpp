@@ -351,13 +351,10 @@ std::vector<int> set_crash_maker_on_out_roads(bool crash, const size_t SIZE_X, c
     for(X = minx; X < maxx; ++X) {
         const long long xy = position_to_cell(SIZE_X, SIZE_Y, X, Y);
         auto& cell = ca_matrix.at(xy);
-        if(cell.direction == GoingUp)
-        {
+        if(cell.direction == GoingUp) {
             cell.crash_maker = crash;
             crash_positions.push_back(X); crash_positions.push_back(Y);
-
-        }
-        else if (cell.direction == Rotary) {
+        } else if (cell.direction == Rotary) {
             int tmp_Y = Y;
             CA_Cell *tmp_cell;
             do {
@@ -368,20 +365,16 @@ std::vector<int> set_crash_maker_on_out_roads(bool crash, const size_t SIZE_X, c
             } while(tmp_cell->direction == Rotary);
             if(tmp_cell->direction == GoingUp) tmp_cell->crash_maker = crash;
             crash_positions.push_back(X); crash_positions.push_back(tmp_Y);
-
         }
     }
     Y=maxy;
     for(X = minx; X < maxx; ++X) {
         const long long xy = position_to_cell(SIZE_X, SIZE_Y, X, Y);
         auto& cell = ca_matrix.at(xy);
-        if(cell.direction == GoingDown)
-        {
+        if(cell.direction == GoingDown){
             cell.crash_maker = crash;
             crash_positions.push_back(X); crash_positions.push_back(Y);
-
-        }
-        else if (cell.direction == Rotary) {
+        } else if (cell.direction == Rotary) {
             int tmp_Y = Y;
             CA_Cell *tmp_cell;
             do {
@@ -389,9 +382,10 @@ std::vector<int> set_crash_maker_on_out_roads(bool crash, const size_t SIZE_X, c
                 const long long xy = position_to_cell(SIZE_X, SIZE_Y, X, tmp_Y);
                 tmp_cell = &ca_matrix.at(xy);
             } while(tmp_cell->direction == Rotary);
-            if(tmp_cell->direction == GoingDown)  tmp_cell->crash_maker = crash;
-            crash_positions.push_back(X); crash_positions.push_back(tmp_Y);
-
+            if(tmp_cell->direction == GoingDown)  {
+                tmp_cell->crash_maker = crash;
+                crash_positions.push_back(X); crash_positions.push_back(tmp_Y);
+            }
         }
     }
 
