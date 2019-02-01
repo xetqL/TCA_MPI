@@ -119,7 +119,7 @@ init_unloading_model(int step, double my_load_slope, int my_rank, const std::vec
             int increasing_gr_size;
             MPI_Group_size(increasing_gr, &increasing_gr_size);
 
-            if (increasing_gr_size > bottom_gr_size / 2)
+            if (increasing_gr_size >= bottom_gr_size / 2)
                 err = MODEL_STATE::on_error_too_many_increasing;
             else {
                 increasing_cpus.resize(increasing_gr_size);
@@ -130,7 +130,7 @@ init_unloading_model(int step, double my_load_slope, int my_rank, const std::vec
         }
     } else { //increasing_group
         MPI_Comm_size(top, &incr_gr_size);
-        if (incr_gr_size > bottom_gr_size / 2) {
+        if (incr_gr_size >= bottom_gr_size / 2) {
             err = MODEL_STATE::on_error_too_many_increasing;
         } else {
             MPI_Comm_group(top, &top_gr);
@@ -138,16 +138,16 @@ init_unloading_model(int step, double my_load_slope, int my_rank, const std::vec
             std::iota(increasing_cpus.begin(), increasing_cpus.end(), 0);
             MPI_Group_translate_ranks(top_gr, increasing_cpus.size(), &increasing_cpus.front(), bottom_gr,
                                       &increasing_cpus.front());
+            top_gr_size = bottom_gr_size - incr_gr_size;
+            MPI_Group incr_gr;
+            MPI_Group_incl(bottom_gr, increasing_cpus.size(), &increasing_cpus.front(), &incr_gr);
+            MPI_Comm_create_group(bottom, incr_gr, 0, &incr);
         }
-        top_gr_size = bottom_gr_size - incr_gr_size;
-        MPI_Group incr_gr;
-        MPI_Group_incl(bottom_gr, increasing_cpus.size(), &increasing_cpus.front(), &incr_gr);
-        MPI_Comm_create_group(bottom, incr_gr, 0, &incr);
     }
 
     std::sort(increasing_cpus.begin(), increasing_cpus.end());
     float sigma = -1;
-    if (err) {
+    if (err != MODEL_STATE::init) {
         increasing_cpus.clear();
     } else {
         int total_nb_vehicles, my_nb_vehicles = data.size();
@@ -162,7 +162,7 @@ init_unloading_model(int step, double my_load_slope, int my_rank, const std::vec
 
 
 template<class A>
-Zoltan_Struct *start_unloading_model(std::vector<A> *data_bottom, // becomes bottom
+Zoltan_Struct* start_unloading_model(std::vector<A> *data_bottom, // becomes bottom
                                      std::vector<A> *data_top,
                                      const UnloadingModelLocalState &model_state,
                                      const MPI_Datatype datatype,
@@ -171,17 +171,12 @@ Zoltan_Struct *start_unloading_model(std::vector<A> *data_bottom, // becomes bot
     std::vector<A> top_mesh_data;
     const std::vector<int> &increasing_cpus = model_state.increasing_cpus;
     Zoltan_Struct *zz_top = nullptr;
-
+    if(increasing_cpus.size() == 0) return zz_top;
     switch (model_state.state) {
-        case MODEL_STATE::on_error:
-        case MODEL_STATE::on_error_too_many_increasing:
-        case MODEL_STATE::on_error_no_increasing:
-        case MODEL_STATE::started:
-        case MODEL_STATE::finished:
-        case MODEL_STATE::stopped:
-            return zz_top;
-        default:
+        case MODEL_STATE::init:
             break;
+        default:
+            return zz_top;
     }
 
     int bottom_rank;
@@ -191,8 +186,9 @@ Zoltan_Struct *start_unloading_model(std::vector<A> *data_bottom, // becomes bot
 
     const bool in_top_partition =
             std::find(increasing_cpus.cbegin(), increasing_cpus.cend(), bottom_rank) == increasing_cpus.cend();
+
     if (!in_top_partition)
-        top_mesh_data = *data_bottom;
+        std::move(data_bottom->begin(), data_bottom->end(), std::back_inserter(top_mesh_data));
 
     zz_top = zoltan_create_wrapper(ENABLE_AUTOMATIC_MIGRATION, bottom, bottom_size - increasing_cpus.size(), in_top_partition ? 1 : 0);
     tca::zoltan_load_balance(&top_mesh_data, zz_top, ENABLE_AUTOMATIC_MIGRATION);
@@ -229,10 +225,6 @@ const std::vector<A> exchange(
     int my_bottom_rank; MPI_Comm_rank(bottom, &my_bottom_rank);
     int wsize; MPI_Comm_size(bottom, &wsize);
 
-    /// Zoltan Invert List import variables
-    ZOLTAN_ID_PTR known_gids, known_lids;
-    ZOLTAN_ID_PTR found_gids, found_lids;
-    int *found_procs, *found_parts;
     std::vector<int> num_import_from_procs(wsize);
     std::vector<int> import_from_procs;
 
@@ -318,8 +310,6 @@ const std::vector<A> exchange(
      * EXCHANGE DATA WITH BOTTOM
      *********************************************************************************************************/
 
-    known_gids = (ZOLTAN_ID_PTR) &export_gids.front();
-    known_lids = (ZOLTAN_ID_PTR) &export_lids.front();
     // Compute who has to send me something via Zoltan.
     num_import_from_procs.resize(wsize);
     {
@@ -420,7 +410,7 @@ const std::vector<A> exchange(
             std::fill(PE_attendance.begin(), PE_attendance.end(), 0);
             for (auto iPE = PEs_bottom2.begin(); iPE < PEs_bottom2.end(); iPE++) {
                 auto PE = *iPE;
-                if(PE >= 0 && !PE_attendance[PE]){
+                if(PE >= 0 && !PE_attendance[PE]) {
                     PE_attendance[PE]++;
                     PEs_distinct.push_back(PE);
                 }
@@ -744,7 +734,8 @@ void migrate(Zoltan_Struct *zoltan_bottom,
  * @param bottom
  */
 template<class A>
-bool stop_unloading_model(int current_step, Zoltan_Struct *zoltan_bottom,
+bool stop_unloading_model(int current_step,
+                          Zoltan_Struct *zoltan_bottom,
                           Zoltan_Struct *zoltan_top, // both are in the same comm
                           std::vector<A> *bottom_data,
                           std::vector<A> *top_data, // it is always empty for increasing load cpus
@@ -763,22 +754,21 @@ bool stop_unloading_model(int current_step, Zoltan_Struct *zoltan_bottom,
     } else {
     }
     */
-
+    int r;
     switch (model_state.state) {
-        case MODEL_STATE::on_error:
-        case MODEL_STATE::on_error_too_many_increasing:
-        case MODEL_STATE::finished:
-             break;
-        default:
+        case MODEL_STATE::started:
             if ((model_state.started_at_step + model_state.sigma) <= current_step) { //global deletion
+                MPI_Comm_rank(bottom, &r);
                 Zoltan_Destroy(&zoltan_top);
-                std::move(top_data->begin(), top_data->end(), std::back_inserter(*bottom_data));
+                std::copy(top_data->begin(), top_data->end(), std::back_inserter(*bottom_data));
+                top_data->clear();
                 tca::zoltan_load_balance(bottom_data, zoltan_bottom, ENABLE_AUTOMATIC_MIGRATION);
                 model_state.state = MODEL_STATE::finished;
                 return true;
             }
+        default:
+            return false;
     }
-    return false;
 }
 
 } // end of namespace esoteric

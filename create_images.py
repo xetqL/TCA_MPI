@@ -31,30 +31,27 @@ pool.close()
 
 max_waiting_time = max(r)
 print max_waiting_time
+import numpy as np
 def processFile(file, max_waiting_time=max_waiting_time):
     print file
-    fig, ax = plt.subplots(1, 1, figsize=(0.2*X, 0.2*Y))
-    plt.xlim(-0.5, X+0.5)
-    plt.ylim(-0.5, Y+0.5)
-    ax.set_yticks(range(0, Y), minor=False)
-    ax.set_xticks(range(0, X), minor=False)
+    arr = np.full((X+1, Y+1), 0)
+    fig, ax = plt.subplots(1, 1, figsize=(20, 20))
     with open(file, 'r') as of:
         data = of.read().split('\n')
-        xdata = []
-        ydata = []
-        cdata = []
         for line in data:
             if line != '':
                 x, y, w = line.split(';')
                 if float(w) >= 0:
-                    xdata.append(int(x))
-                    ydata.append(Y-int(y))
-                    cdata.append(float(w))
-    plt.scatter(xdata, ydata, c=cdata, edgecolors=None, s=(80.0), cmap='jet', vmin=-0.05*max_waiting_time, vmax=0.05*max_waiting_time)
+                    arr[int(x), Y-int(y)]= float(w)
+
+    #ax[0].contourf(arr)
+    ax.imshow(arr, cmap='jet', vmin=-5, vmax=15, interpolation='gaussian')
+
+    m = plt.cm.ScalarMappable(cmap="jet")
+    m.set_array(arr)
+    m.set_clim(-5., 15)
     plt.savefig(file.split('_')[0]+"_py_out.jpg")
     plt.close(fig)
 
 pool = multiprocessing.Pool(8)
 pool.map(processFile, files)
-#for file in files:
-

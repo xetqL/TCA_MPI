@@ -95,12 +95,11 @@ void randomize_cars_position(size_t sx, size_t sy, const std::vector<std::vector
 
 void randomize_cars_position(size_t sx, size_t sy, const std::unordered_map<long long, CA_Cell> &ca_matrix,
                              std::unordered_map<long long, Vehicle>& vehicle_matrix) {
-
     int gid = 0;
     for (size_t y = 0; y < sy; y++) {
         for (size_t x = 0; x < sx; x++) {
             if (ca_matrix.at(position_to_cell(sx, sy, x, y)).direction != NoDirection) {
-                if (rand() % 100 > 85) {
+                if (rand() % 100 > 95) {
                     vehicle_matrix[position_to_cell(sx, sy, x, y)] = Vehicle(gid, gid, x, y, 1);
                     gid++;
                 }
@@ -194,7 +193,7 @@ std::tuple<std::unordered_map<long long, CA_Cell>, std::vector<int>, std::vector
     manhattan.reserve(MANHATTAN_LENGTH);
 
     std::vector<int> roads_position_x;
-    for(int last = (rand() % 7) + 1; (last+2) < SIZE_X; last += (rand() % 7) + 3){
+    for(int last = (rand() % 7) + 1; (last + 2) < SIZE_X; last += (rand() % 7) + 3){
         roads_position_x.push_back(last);
     }
 
@@ -244,6 +243,54 @@ void create_random_left_sources(int n, const size_t SIZE_X, const size_t SIZE_Y,
     }
 }
 
+void create_random_sources(int rank, int n, const size_t SIZE_X, const size_t SIZE_Y, const std::tuple<int, int, int, int>& geom, std::unordered_map<long long, CA_Cell> *ca_matrix) {
+    int minx, maxx, miny, maxy; std::tie(minx, maxx, miny, maxy) = geom;
+    long long xy;
+    std::vector<long long> pos;
+    int match_criteria = 0;
+    match_criteria += minx == 0 ? 1 : 0;
+    match_criteria += miny == 0 ? 1 : 0;
+    match_criteria += maxx == 0 ? 1 : 0;
+    match_criteria += maxy == 0 ? 1 : 0;
+    if(match_criteria >= 2) {
+        if(minx == 0) {
+            for(int y = miny; y < maxy; ++y) {
+                xy = position_to_cell(SIZE_X, SIZE_Y, minx, y);
+                if(ca_matrix->at(xy).direction == GoingRight) {
+                    pos.push_back(xy);
+                }
+            }
+        }
+        if(miny == 0){
+            for(int x = minx; x < maxx; ++x) {
+                xy = position_to_cell(SIZE_X, SIZE_Y, x, miny);
+                if(ca_matrix->at(xy).direction == GoingDown)
+                    pos.push_back(xy);
+            }
+        }
+        if(maxx == SIZE_X-1) {
+            for(int y = miny; y < maxy; ++y) {
+                xy = position_to_cell(SIZE_X, SIZE_Y, maxx, y);
+                if(ca_matrix->at(xy).direction == GoingLeft)
+                    pos.push_back(xy);
+            }
+        }
+        if(maxy == SIZE_Y-1) {
+            for(int x = minx; x < maxx; ++x) {
+                xy = position_to_cell(SIZE_X, SIZE_Y, x, maxy);
+                if(ca_matrix->at(xy).direction == GoingUp)
+                    pos.push_back(xy);
+            }
+        }
+        std::random_shuffle(pos.begin(), pos.end());
+        n = (n > pos.size() || n < 0) ? pos.size() : n;
+        for(; n > 0; --n) {
+            ca_matrix->at(pos[n-1]).source = true;
+        }
+    }
+
+}
+
 std::tuple<int, int, int, int> get_geometry_from_vehicles(
         int rank, Zoltan_Struct* zz, const std::unordered_map<long long, Vehicle>& my_vehicles, const size_t SIZE_X, const size_t SIZE_Y) {
     int x, y, minx= SIZE_X, miny = SIZE_Y, maxx=-1,maxy=-1;
@@ -287,31 +334,32 @@ std::tuple<int, int, int, int> get_geometry_from_vehicles(
 
     return std::make_tuple(minx, maxx, miny, maxy);
 }
+
+
 std::tuple<int, int, int, int> get_geometry_from_vehicles(
                     int rank, Zoltan_Struct* zz,
                     const std::vector<Vehicle>& my_vehicles,
                     const size_t SIZE_X, const size_t SIZE_Y) {
-    int x, y, minx= SIZE_X, miny = SIZE_Y, maxx=-1,maxy=-1;
+    int x, y, minx= SIZE_X, miny = SIZE_Y, maxx=-1, maxy=-1;
     //create boundaries from vehicles
     for(const auto& v : my_vehicles) {
         std::tie(x, y) = v.position;
         minx = std::min(x, minx); miny = std::min(y, miny);
         maxx = std::max(x, maxx); maxy = std::max(y, maxy);
     }
-    std::cout << rank << " " << minx << " "<< maxx << " "<< miny << " "<< maxy << std::endl;
 
     //then grow from those boundaries to the edges of my own area
     //using linear search (but maybe, binary search could provide better perf.) TODO: test with binary search
     int PE, part;
     std::array<double, 2> pos_in_double;
-    for(int i = minx; i > 0; --i) {
+    for(int i = minx; i >= 0; --i) {
         pos_in_double = {(double) i, (double) miny};
         Zoltan_LB_Point_PP_Assign(zz, &pos_in_double.front(), &PE, &part);
         if(PE == rank) // my point
             minx = i;
     }
 
-    for(int i = miny; i > 0; --i) {
+    for(int i = miny; i >= 0; --i) {
         pos_in_double = {(double) minx, (double) i};
         Zoltan_LB_Point_PP_Assign(zz, &pos_in_double.front(), &PE, &part);
         if(PE == rank) // my point
@@ -331,7 +379,6 @@ std::tuple<int, int, int, int> get_geometry_from_vehicles(
         if(PE == rank) // my point
             maxy = i;
     }
-
     return std::make_tuple(minx, maxx, miny, maxy);
 }
 
@@ -440,7 +487,8 @@ std::vector<int> set_crash_maker_on_out_roads(bool crash, const size_t SIZE_X, c
     return crash_positions;
 }
 
-void update_crash_positions(int rank, int SIZE_X, int SIZE_Y, const std::vector<int>& my_crash_pos,
+
+void update_crash_positions(bool crash, int SIZE_X, int SIZE_Y, const std::vector<int>& my_crash_pos,
                             std::unordered_map<long long, CA_Cell>* _ca_matrix, MPI_Comm comm) {
     std::unordered_map<long long, CA_Cell>& ca_matrix = *(_ca_matrix);
     int wsize; MPI_Comm_size(comm, &wsize);
@@ -461,7 +509,7 @@ void update_crash_positions(int rank, int SIZE_X, int SIZE_Y, const std::vector<
     for(int idx = 0; idx < count; idx+=2) {
         int X = rcv_buf[idx], Y=rcv_buf[idx+1];
         auto xy = position_to_cell(SIZE_X, SIZE_Y, X, Y);
-        ca_matrix[xy].crash_maker = true;
+        ca_matrix[xy].crash_maker = crash;
     }
 
 }

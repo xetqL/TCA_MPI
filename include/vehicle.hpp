@@ -14,18 +14,17 @@
 struct Vehicle {
     int gid = 0;
     int lid = 0;
-    int rotary_exit_flag;
+
     int waiting_time = 0;
     std::pair<int, int> position;
     float speed = 1;
+    mutable int rotary_exit_flag;
 
     Vehicle(): gid(-1), lid(-1), rotary_exit_flag(0), position(std::make_pair(-1, -1)),  speed(1) {}
     Vehicle(int gid, int lid, int x, int y, float speed) : gid(gid), lid(lid), rotary_exit_flag(rand() % 100 < PROBABILITY_EXIT), position(std::make_pair(x, y)),  speed(speed) {}
     Vehicle(int gid, int lid, std::pair<int, int> pos, float speed) : gid(gid), lid(lid), rotary_exit_flag(rand() % 100 < PROBABILITY_EXIT), position(std::move(pos)),  speed(speed) {}
     Vehicle(int gid, int lid, CA_Cell& c, float speed) : gid(gid), lid(lid), rotary_exit_flag(rand() % 100 < PROBABILITY_EXIT), position(c.position),  speed(speed) {}
     Vehicle(int gid, int lid, const CA_Cell& c, float speed) : gid(gid), lid(lid), rotary_exit_flag(rand() % 100 < PROBABILITY_EXIT), position(c.position),  speed(speed) {}
-    //Vehicle(Vehicle&& v) noexcept :  gid(v.gid), lid(v.lid), rotary_exit_flag(v.rotary_exit_flag), position(std::move(v.position)), speed(v.speed)  {};
-    //Vehicle(const Vehicle& v) noexcept :  gid(v.gid), lid(v.lid), rotary_exit_flag(v.rotary_exit_flag), position(v.position), speed(v.speed)  {};
 
     friend std::ostream &operator<<(std::ostream &os, const Vehicle &vehicle) {
         int x,y;
@@ -46,6 +45,24 @@ struct Vehicle {
     std::array<double, 2> get_position_as_array() {
         return {(double) position.first, (double) position.second};
     };
+
+    Vehicle drive(int x, int y, float speed) const {
+        //usleep((rand() % 500 + 500)); //simulate a more complex Agent's task
+        return Vehicle(gid, lid, x, y, speed);
+    }
+
+    Vehicle drive(std::pair<int,int> pos, float speed) const {
+        int x, y; std::tie(x,y) = pos;
+        return this->drive(x,y,speed);
+    }
+
+    bool operator==(const Vehicle &rhs) const {
+        return position == rhs.position;
+    }
+
+    bool operator!=(const Vehicle &rhs) const {
+        return !(rhs == *this);
+    }
 
     static CommunicationDatatype register_datatype() {
 
@@ -86,6 +103,15 @@ struct Vehicle {
 
         return CommunicationDatatype(position_datatype, element_datatype);
     }
+
+    bool want_to_exit(int rotary_pos){
+        return rotary_exit_flag || rotary_pos == 3;
+    }
+
+    void set_exit_flag(int exit) {
+        this->rotary_exit_flag = exit;
+    }
+
 };
 
 

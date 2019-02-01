@@ -26,7 +26,7 @@ add_executable(CA_road
         include/rules.hpp
         include/communication.hpp
         include/unloading_model.hpp
-        src/main.cpp include/tca_utils.hpp include/tca_io.hpp include/gif.h src/zupply.cpp src/zupply.hpp)
+        src/main.cpp include/tca_utils.hpp include/tca_io.hpp include/gif.h src/zupply.cpp src/zupply.hpp include/window.hpp include/metric.hpp)
 
 message(${CMAKE_SOURCE_DIR})
 
