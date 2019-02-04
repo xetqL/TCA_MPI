@@ -352,10 +352,9 @@ int main(int argc, char **argv) {
             if(loss < 0) next_lb_call = step + 1;
             else next_lb_call = step + (int) std::ceil(std::sqrt((2*(std::accumulate(lb_costs.begin(), lb_costs.end(), 0.0))/ (float)lb_costs.window_max_size)/maxslope));
             applylb = loss < 0;
-            if(!rank){
+            if(!rank) {
                 steplogger->info("Standard model, next LB call in: ")<< (next_lb_call-step);
                 perflogger->info("LBCost:") << lb_cost;
-
             }
         }
 #endif

@@ -13004,7 +13004,7 @@ namespace zz
 			running_ = false;
 			timer_.reset();
 			sprintf(rate_, "%.1f/sec", 0.0);
-			start();
+			//start();
 		}
 
 		ProgBar::~ProgBar()
@@ -13067,7 +13067,7 @@ namespace zz
 				ss_.rdbuf(oldCout_);
 				//ss_ << std::endl;
 				running_ = true;
-				worker_ = std::thread([this]{ this->bg_work(); });
+				//worker_ = std::thread([this]{ this->bg_work(); });
 			}
 		}
 
