@@ -85,7 +85,7 @@ struct UnloadingModelLocalState {
 // TODO: If everybody has increasing load, then nobody in top, then the execution will fail.
 template<class A>
 UnloadingModelLocalState
-init_unloading_model(int step, double my_load_slope, int my_rank, const std::vector<A> &data, MPI_Comm bottom) {
+init_unloading_model(int step, float my_load_slope, int my_rank, const std::vector<A> &data, MPI_Comm bottom) {
     // top is set for PE that does not have an increasing load others have undefined.
     // bottom is simply MPI_COMM_WORLD normally
     // easy as fuck right?
@@ -153,9 +153,10 @@ init_unloading_model(int step, double my_load_slope, int my_rank, const std::vec
         int total_nb_vehicles, my_nb_vehicles = data.size();
         MPI_Allreduce(&my_nb_vehicles, &total_nb_vehicles, 1, MPI_INT, MPI_SUM, bottom);
         int mu = total_nb_vehicles / bottom_gr_size;
-        sigma = mu / SLOPE_THRESHOLD;
+        float max_slope;
+        MPI_Allreduce(&my_load_slope, &max_slope, 1, MPI_FLOAT, MPI_MAX, bottom);
+        sigma = mu / max_slope;
     }
-
     return {err, top_gr_size, bottom_gr_size, 0, -1, is_not_increasing, increasing_cpus, step, sigma,
             is_not_increasing ? MPI_COMM_NULL : incr};
 }

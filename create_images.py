@@ -1,6 +1,7 @@
 import os,sys
 import matplotlib.pyplot as plt
 import numpy as np
+import multiprocessing
 
 directory_content = os.listdir('.')
 files = filter(lambda f: 'waiting_time' in f, directory_content)
@@ -12,7 +13,6 @@ print X, Y
 max_waiting_time = 0
 max_wtime = []
 x = 1/X
-import multiprocessing
 def getMaxFileSize(file):
     print "processing file: ", file
     global max_wtime
@@ -31,7 +31,6 @@ pool.close()
 
 max_waiting_time = max(r)
 print max_waiting_time
-import numpy as np
 def processFile(file, max_waiting_time=max_waiting_time):
     print file
     arr = np.full((X+1, Y+1), 0)

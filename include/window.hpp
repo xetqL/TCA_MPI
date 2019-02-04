@@ -12,7 +12,7 @@ struct SlidingWindow {
     std::deque<T> data_container;
     size_t window_max_size;
 
-    SlidingWindow(size_t window_max_size) : data_container(window_max_size), window_max_size(window_max_size) {};
+    SlidingWindow(size_t window_max_size, T init_value) : data_container(window_max_size, init_value), window_max_size(window_max_size) {};
 
     inline void add(const T &data) {
         if (data_container.size() < window_max_size)
@@ -21,6 +21,16 @@ struct SlidingWindow {
             data_container.pop_front();     // delete oldest data
             data_container.push_back(data); // push new data
         }
+    }
+
+
+
+    typename std::deque<T>::iterator begin(){
+        return data_container.begin();
+    }
+
+    typename std::deque<T>::iterator end(){
+        return data_container.end();
     }
 };
 

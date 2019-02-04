@@ -4448,7 +4448,7 @@ namespace zz
 		 * \param truncate Open the file in truncate mode?
 		 * \return Shared pointer to the new sink.
 		 */
-		SinkPtr new_simple_file_sink(std::string filename, bool truncate = false);
+		SinkPtr new_simple_file_sink(std::string filename, bool truncate = true);
 
 		/*!
 		 * \brief Create new rotate file sink.

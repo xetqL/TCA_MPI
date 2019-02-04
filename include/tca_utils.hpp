@@ -494,7 +494,6 @@ void update_crash_positions(bool crash, int SIZE_X, int SIZE_Y, const std::vecto
     int wsize; MPI_Comm_size(comm, &wsize);
     const int nb_crash = my_crash_pos.size();
     std::vector<int> all_crashes(wsize, 0), displ(wsize), rcv_buf;
-    std::cout << nb_crash << std::endl;
 
     MPI_Allgather(&nb_crash, 1, MPI_INT, &all_crashes.front(), 1, MPI_INT, comm);
 

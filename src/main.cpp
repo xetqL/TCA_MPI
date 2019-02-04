@@ -27,6 +27,9 @@ auto v = MPI_Wtime()
 #define RESTART_TIMING(v) \
 v = MPI_Wtime() - v
 
+#define CHECKPOINT_TIMING(v, u) \
+auto u = MPI_Wtime() - v
+
 #define STOP_TIMING(v) \
 v = MPI_Wtime() - v
 
@@ -47,7 +50,7 @@ using namespace std;
 using namespace tca;
 
 
-#define UNLOADING_MODEL 1 
+#define UNLOADING_MODEL 0
 
 
 unordered_map<long long, Vehicle> update(const int msx, const int msy,
@@ -176,6 +179,15 @@ void generate_vehicles(const int step, const int my_rank,
         vehicles_map.erase(cell);
     }
 }
+template<class A>
+std::ostream &operator<<(std::ostream &os, const std::vector<A> &data) {
+    const auto sz = data.size();
+    for (int i = 0; i < sz-1; ++i) {
+        os << data[i] << ",";
+    }
+    os << data[sz-1];
+    return os;
+}
 
 int main(int argc, char **argv) {
     int wsize, rank;
@@ -186,6 +198,15 @@ int main(int argc, char **argv) {
     MPI_Comm_rank(bottom, &rank);
     int SIZE_X, SIZE_Y;
     std::ofstream out;
+    zz::log::LoggerPtr perflogger, steplogger;
+
+    if(!rank) {
+        zz::log::config_from_file("logger.cfg");
+        perflogger = zz::log::get_logger("perf",  true);
+        steplogger = zz::log::get_logger("steps", true);
+        perflogger->info("CPU COUNT:")    << wsize;
+        perflogger->info("LoadBalancer:") << UNLOADING_MODEL;
+    }
 
     unordered_map<long long, CA_Cell> ca_matrix;
     const std::string prefix_fname(argv[1]);
@@ -194,10 +215,14 @@ int main(int argc, char **argv) {
 
     SIZE_X = std::atoi(argv[3]);
     SIZE_Y = std::atoi(argv[4]);
-    const int MAX_VC = SIZE_X*SIZE_Y;
+
+    const int MAX_VC = SIZE_X * SIZE_Y;
+
+    if(!rank) steplogger->info() << "Starting map generation";
+
     std::tie(ca_matrix, std::ignore, road_y_pos) = generate_random_manhattan(SIZE_X, SIZE_Y);
 
-    if(!rank) std::cout << "End of map generation\nStarting computations..." << std::endl;
+    if(!rank) steplogger->info() << "Starting computations...";
 
     unordered_map<long long, Vehicle> vehicle_matrix;
 
@@ -206,7 +231,6 @@ int main(int argc, char **argv) {
         randomize_cars_position(SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix);
     }
     auto vehicles = to_vec(vehicle_matrix);
-    std::cout << vehicles.size() << std::endl;
 
     if(!rank){
         auto img = zzframe( SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix);
@@ -214,7 +238,9 @@ int main(int argc, char **argv) {
     }
     auto zz = zoltan_create_wrapper(ENABLE_AUTOMATIC_MIGRATION, MPI_COMM_WORLD);
 
+    PAR_START_TIMING(lb_cost_init, bottom);
     zoltan_load_balance(&vehicles, zz, ENABLE_AUTOMATIC_MIGRATION);
+    PAR_STOP_TIMING(lb_cost_init, bottom);
 
     auto geom = get_geometry_from_vehicles(rank, zz, vehicles, SIZE_X, SIZE_Y); //wont work with HSFC
     create_random_sources(rank, -1, SIZE_X, SIZE_Y, geom, &ca_matrix); //wont work with HSFC
@@ -223,96 +249,116 @@ int main(int argc, char **argv) {
     if(!rank) {
         crash = set_crash_maker_on_out_roads(true, SIZE_X, SIZE_Y, geom, &ca_matrix);
     }
-
     //sharing all crash positions alltoall
     update_crash_positions(true, SIZE_X, SIZE_Y, crash, &ca_matrix, bottom);
-
     std::vector<Vehicle> top_vehicles;
-
+    Zoltan_Struct* zztop = nullptr;// = load_balancing::esoteric::start_unloading_model(&vehicles , &top_vehicles, model_state, datatype.elements_datatype, bottom);
+    float dydx = 0;
 #if UNLOADING_MODEL > 0
-    if(!rank) std::cout << "UNLOADING MODEL APPLIED" << std::endl;
-    double dydx = 0;
-    auto model_state = load_balancing::esoteric::init_unloading_model(0, dydx, rank, vehicles, bottom);
-    if(model_state.state != load_balancing::esoteric::MODEL_STATE::init) {
-        std::cout << "no esoteric call" << std::endl;
-    } else std::cout << rank << " Next call in " << model_state.sigma << "iterations "<<std::endl;
-    auto zztop = load_balancing::esoteric::start_unloading_model(&vehicles , &top_vehicles, model_state, datatype.elements_datatype, bottom);
-    //load_balancing::esoteric::UnloadingModelLocalState model_state;
+    load_balancing::esoteric::UnloadingModelLocalState model_state;// = load_balancing::esoteric::init_unloading_model(0, dydx, rank, vehicles, bottom);
+    bool model_stopped = true;
+#else
+    int next_lb_call = 5;
 #endif
     int step = 0;
+    SlidingWindow<int> window(5, vehicles.size());
+    SlidingWindow<double> lb_costs(10, lb_cost_init);
 
-    SlidingWindow<int> window(5);
     constexpr std::array<int, 5> it = {1,2,3,4,5};
-    int rcnt_array[2] = {6, -2}, rcnt = 6, rcnti = -1;
-    bool model_stopped = true;
+    constexpr std::array<int, 2> rcnt_array = {6, -2};
+    int rcnt = 6, rcnti = -1;
+    bool applylb = true;
+    std::vector<int> incr_cpus;
     while (step < MAX_STEP) {
+        int workload = vehicles.size() + top_vehicles.size();
+        std::vector<int> all_workload(wsize);
         if(step % 100 == 0) rcnti = (rcnti+1) % 2;
         rcnt = rcnt_array[rcnti];
-        window.add(vehicles.size());
-        auto dydx = get_slope<float>(it, window.data_container);
-        //std::cout << rank << " : " << dydx <<  std::endl;
-        if(!rank) {
-            //std::for_each(window.data_container.cbegin(), window.data_container.cend(), [](auto v){ std::cout << v << " "; });
-            //std::cout << std::endl;
-        }
+        MPI_Gather(&workload, 1, MPI_INT, &all_workload.front(), 1, MPI_INT, 0, bottom);
+        if(!rank) perflogger->info("step:")<< step <<","<< "workloads:[" << all_workload << "]";
+        window.add(workload);
+        dydx = get_slope<float>(it, window.data_container);
+        std::vector<float> all_dydx(wsize);
+        MPI_Gather(&dydx, 1, MPI_FLOAT, &all_dydx.front(), 1, MPI_FLOAT, 0, bottom);
+        if(!rank) perflogger->info("step:")<< step <<","<< "slopes:[" << all_dydx << "]";
+        MPI_Barrier(bottom);
+        PAR_START_TIMING(step_time, bottom);
 #if UNLOADING_MODEL > 0
-        //std::cout << model_stopped << std::endl;
         if(model_stopped) {
+            PAR_START_TIMING(lb_cost, bottom);
             model_state = load_balancing::esoteric::init_unloading_model(step, dydx, rank, vehicles, bottom);
             if(model_state.state == load_balancing::esoteric::init) {
                 zztop = load_balancing::esoteric::start_unloading_model(&vehicles , &top_vehicles, model_state, datatype.elements_datatype, bottom);
-                if(!rank)
-                    std::cout << "Restarting model\n-> Next call in " << model_state.sigma << "iterations "<<std::endl;
+                if(!rank) steplogger->info() << "Restarting model, -> Next call in " << model_state.sigma << "iterations ";
                 model_stopped = false;
+                PAR_STOP_TIMING(lb_cost, bottom);
+                if(!rank) perflogger->info("LBCost:") << lb_cost;
+                incr_cpus = model_state.increasing_cpus;
             } else {
-                std::cout << "no esoteric call" << std::endl;
-                std::cout << vehicles.size() << std::endl;
+                PAR_STOP_TIMING(lb_cost, bottom);
+                if(!rank) {
+                    switch(model_state.state){
+                        case load_balancing::esoteric::MODEL_STATE::on_error_no_increasing:
+                            steplogger->info() << "Standard model used because there's no increasing";
+                            break;
+                        case load_balancing::esoteric::MODEL_STATE::on_error_too_many_increasing:
+                            steplogger->info() << "Standard model used because N >= P/2";
+                            break;
+                    }
+                }
+                if(!rank) perflogger->info("NoLBCost:") << lb_cost;
             }
         }
 #endif
-        MPI_Barrier(bottom);
-        PAR_START_TIMING(step_time, bottom);
+
         int recv, sent;
         /*************************************Start parallel exchange********************************************/
-        PAR_START_TIMING(comm_time, bottom);
-#if UNLOADING_MODEL > 0
-        std::vector<Vehicle> remote_data;
 
-        remote_data = load_balancing::esoteric::exchange(zz, zztop, &vehicles, &top_vehicles, &recv, &sent, geom, model_state.increasing_cpus, datatype.elements_datatype, bottom, 1.0);
-#else
-        auto remote_data =  zoltan_exchange_data(zz, &vehicles, &recv, &sent, datatype.elements_datatype, bottom,  1.2);
-#endif
-        PAR_STOP_TIMING(comm_time, bottom);
-        // Stop parallel exchange
+        PAR_START_TIMING(exchange_time, bottom);
+        auto remote_data = load_balancing::esoteric::exchange(zz, zztop, &vehicles, &top_vehicles, &recv, &sent, geom, incr_cpus, datatype.elements_datatype, bottom, 1.0);
+        PAR_STOP_TIMING(exchange_time, bottom);
 
         /*************************************Start parallel computation*****************************************/
+
         PAR_START_TIMING(computation_time, bottom);
         auto vehicle_matrix_remote = to_map(SIZE_X, SIZE_Y, remote_data);
         auto vehicle_matrix_bottom = to_map(SIZE_X, SIZE_Y, vehicles);
         auto vehicle_matrix_top    = to_map(SIZE_X, SIZE_Y, top_vehicles);
-
         auto updated_vehicle_matrix1 = parallel_update_new_model(SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix_bottom, vehicle_matrix_top, vehicle_matrix_remote);
         auto updated_vehicle_matrix2 = parallel_update_new_model(SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix_top, vehicle_matrix_bottom, vehicle_matrix_remote);
-
         if(!rank) generate_vehicles(step, rank, SIZE_X, SIZE_Y, zz, ca_matrix, &updated_vehicle_matrix1, rcnt);
-
         vehicles     = to_vec(updated_vehicle_matrix1);
         top_vehicles = to_vec(updated_vehicle_matrix2);
-
         PAR_STOP_TIMING(computation_time, bottom);
 
         // Stop parallel computation
         /********************************Start load balancing and migration**************************************/
         PAR_START_TIMING(migrate_time, bottom);
-#if UNLOADING_MODEL > 0
-
-        load_balancing::esoteric::migrate(zz, zztop, &vehicles, &top_vehicles, model_state.increasing_cpus, datatype.elements_datatype, bottom);
-
-#else
-        zoltan_migrate_particles(zz, &vehicles, datatype.elements_datatype, bottom);
-        //zoltan_load_balance(&vehicles, zz, ENABLE_AUTOMATIC_MIGRATION);
-#endif
+        load_balancing::esoteric::migrate(zz, zztop, &vehicles, &top_vehicles, incr_cpus, datatype.elements_datatype, bottom);
         PAR_STOP_TIMING(migrate_time, bottom);
+
+#if UNLOADING_MODEL == 0
+        // Menon et al.
+        if(step == next_lb_call) {
+            float maxslope;
+            PAR_START_TIMING(lb_cost, bottom);
+            MPI_Allreduce(&dydx, &maxslope, 1, MPI_FLOAT, MPI_MAX, bottom);
+            if(applylb) {
+                zoltan_load_balance(&vehicles, zz, ENABLE_AUTOMATIC_MIGRATION);
+                lb_costs.add(lb_cost);
+            }
+            PAR_STOP_TIMING(lb_cost, bottom);
+            auto loss = (2*(std::accumulate(lb_costs.begin(), lb_costs.end(), 0.0))/ (float)lb_costs.window_max_size) / maxslope;
+            if(loss < 0) next_lb_call = step + 1;
+            else next_lb_call = step + (int) std::ceil(std::sqrt((2*(std::accumulate(lb_costs.begin(), lb_costs.end(), 0.0))/ (float)lb_costs.window_max_size)/maxslope));
+            applylb = loss < 0;
+            if(!rank){
+                steplogger->info("Standard model, next LB call in: ")<< (next_lb_call-step);
+                perflogger->info("LBCost:") << lb_cost;
+
+            }
+        }
+#endif
         // Stop load balancing and migration
 #if UNLOADING_MODEL > 0
         if(!model_stopped) {
@@ -322,12 +368,15 @@ int main(int argc, char **argv) {
                 zoltan_load_balance(&vehicles, zz, ENABLE_AUTOMATIC_MIGRATION);
                 geom = get_geometry_from_vehicles(rank, zz, vehicles, SIZE_X, SIZE_Y); //wont work with HSFC
                 create_random_sources(rank, -1, SIZE_X, SIZE_Y, geom, &ca_matrix); //wont work with HSFC
-                std::fill(window.data_container.begin(), window.data_container.end(), 0);
+                std::fill(window.begin(), window.end(), vehicles.size());
             }
         }
 #endif
         MPI_Barrier(bottom);
         PAR_STOP_TIMING(step_time, bottom);
+
+
+        if(!rank) perflogger->info("StepTime:") << step_time;
 
         if(step % 100 == 0) {
             if(!rank) set_crash_maker_on_out_roads(rcnt > 0, SIZE_X, SIZE_Y, geom, &ca_matrix);
@@ -343,13 +392,13 @@ int main(int argc, char **argv) {
         } else all_vehicles = vehicles;
 
         if(!rank) {
-            std::cout << "Time for step " << step
-                      << "; [TOT " << step_time
+            steplogger->info() << "Step " << step << " finished:"
+                      << "[TOT " << step_time
                       << ", CPT " << computation_time
-                      << ", COM EXCHANGE " << comm_time
-                      << ", COM MIGRATE " << migrate_time
+                      << ", COM EXCHANGE " << exchange_time
+                      << ", COM MIGRATE "  << migrate_time
                       << "] => " << (100*computation_time/step_time)<<"% CPT "
-                      << (100*comm_time/step_time)<<"% COM" << std::endl;
+                      << (100*(exchange_time+migrate_time)/step_time)<<"% COM";
 
             auto vehicle_matrix_print = to_map(SIZE_X, SIZE_Y, all_vehicles);
             auto img = zzframe( SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix_print);
