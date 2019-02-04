@@ -400,12 +400,12 @@ int main(int argc, char **argv) {
                       << (100*(exchange_time+migrate_time)/step_time)<<"% COM";
 
             auto vehicle_matrix_print = to_map(SIZE_X, SIZE_Y, all_vehicles);
-            auto img = zzframe( SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix_print);
+            //auto img = zzframe( SIZE_X, SIZE_Y, ca_matrix, vehicle_matrix_print);
             auto step_str =  std::to_string(step);
             step_str = std::string(std::to_string(MAX_STEP).length() - step_str.length(), '0') + step_str;
             out.open(step_str+"_waiting_time.txt", std::ofstream::out);
             print_vehicles(out, all_vehicles);
-            img.save(( step_str+prefix_fname).c_str());
+            //img.save(( step_str+prefix_fname).c_str());
             out.close();
         }
         // Stop printing
